@@ -228,16 +228,16 @@ function apply(ctx, config) {
   if (config.bridgeTextOnly) {
     const exportDir = config.bridgeExportDir || join(os.tmpdir(), "dsh-vision-bridge");
     mkdir(exportDir, { recursive: true }).catch(() => {});
-    ctx.on("llm/stream", async (options) => {
+    ctx.on("llm/stream", async function* (options, next) {
+      let effective = options;
       try {
-        if (!options?.messages || !hasImageBlock(options.messages)) return options;
-        if (config.multimodalModels.includes(options.model)) return options;
-        const messages = await bridgeMessages(options.messages, ctx, exportDir);
-        return { ...options, messages };
+        if (options?.messages && hasImageBlock(options.messages) && !config.multimodalModels.includes(options.model)) {
+          effective = { ...options, messages: await bridgeMessages(options.messages, ctx, exportDir) };
+        }
       } catch (error) {
         ctx.logger.warn(`[tool-vision] image bridge failed: ${String(error)}`);
-        return options;
       }
+      yield* next(effective);
     });
   }
 
