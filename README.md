@@ -2,18 +2,22 @@
 
 External vision model for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-DeepSeek's own models are text-only, and dsh-llm has no multimodal content
-block yet. This plugin bridges the gap in two ways:
+DeepSeek's own models are text-only, and the harness derives every model
+request strictly from the session log (`llm/stream` requests must equal the
+durable derivation — the agent-loop invariant). This plugin bridges the gap
+in two ways:
 
 1. **`inspect_image` tool** — sends an image (local file, or http(s) URL) to
    **any OpenAI-compatible** `/chat/completions` endpoint that supports
    `image_url` content parts, and returns the vision model's textual answer
    into the agent loop.
-2. **Image bridge (v0.1.1)** — when the active model is text-only, images
-   pasted into the conversation are intercepted on the `llm/stream`
-   waterfall, exported to a local file, and replaced with a text hint, so
-   the agent picks them up with `inspect_image`. Models listed in
-   `multimodalModels` receive image blocks directly instead.
+2. **Image bridge (v0.2.0)** — pasted images are turned into `inspect_image`
+   hints *before they enter the durable log*, on the `agent/pre-step`
+   waterfall (the one seam where the harness lets a plugin replace the
+   messages of a proposed step). Images already logged by an older version
+   are repaired lazily with a surface `replace` on the session's first
+   pre-step. Models listed in `multimodalModels` (or whose resolved
+   `inputModalities` include `image`) receive image blocks directly instead.
 
 - Zero dependencies beyond the dsh SDK — works with any compatible endpoint:
   OpenAI GPT-4o, Qwen-VL (DashScope), GLM-4V (Zhipu), Moonshot, Gemini
@@ -54,14 +58,14 @@ Or load it from a local path without npm:
 | `timeoutMs` | `60000` | Per-request timeout. |
 | `maxImageBytes` | `10MB` | Largest accepted local image. |
 | `description` | default | Tool description shown to the model. |
-| `bridgeTextOnly` | `true` | Bridge pasted images to text hints for text-only models. |
+| `bridgeTextOnly` | `true` | Bridge pasted images to text hints on models that cannot see images. |
 | `bridgeExportDir` | temp | Export dir for bridged images (`os.tmpdir()/dsh-vision-bridge`). |
 | `multimodalModels` | `[]` | Model ids that receive image blocks directly (e.g. `mimo-v2.5`). |
 
 ## Image bridge setup
 
-1. In your model settings, declare image input on the text models you use
-   (pi-ai style), so the harness lets image messages through:
+1. In your model settings, declare image input on the models you paste
+   images onto, so the harness admits image messages (pi-ai style):
    ```yaml
    llm-pi-ai:
      providers:
@@ -79,9 +83,17 @@ Or load it from a local path without npm:
        multimodalModels: ['mimo-v2.5', 'grok-4.5']
    ```
 
-Then pasting an image while on a text-only model produces a hint like
+Then pasting an image while on a text-only model stores a hint like
 `[User sent an image, exported to: <path>. Inspect it with the inspect_image tool...]`
-and the agent inspects it through the configured vision endpoint.
+in the transcript (the pasted image no longer renders as pixels in that
+message), and the agent inspects it through the configured vision endpoint.
+
+> Why not `llm/stream`? The harness freezes every request and the agent-loop
+> invariant fails any request whose messages diverge from the session-log
+> derivation (`log-reconstruction desync`), and this cordis waterfall's
+> `next()` cannot replace request arguments. The `agent/pre-step` waterfall is
+> the supported seam: its decision messages *become* the durable log, so the
+> invariant stays satisfied.
 
 Key resolution order: `config.apiKey` → `process.env[apiKeyEnv]` →
 `process.env.OPENAI_API_KEY`.
@@ -104,8 +116,9 @@ Example endpoints (`baseURL`):
 
 ## Limitations
 
-- The image enters the conversation as a text description (a transcript, not
-  pixels) — pixel-precise tasks may be inaccurate.
+- A bridged image enters the conversation as a text hint (a transcript, not
+  pixels) — pixel-precise in-context reasoning is not available to text-only
+  models; the vision model's description comes back through `inspect_image`.
 - Images are base64-transferred; mind privacy and size limits.
 - Independent of the dsh-llm routing/retry system; failures return clear
   errors to the agent.

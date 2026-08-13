@@ -1,67 +1,55 @@
 # dsh-tool-vision
 
-External vision model for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
+给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 外接**视觉模型**的插件。
 
-DeepSeek's own models are text-only, and dsh-llm has no multimodal content
-block yet. This plugin bridges the gap in two ways:
+DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**严格从会话日志推导**（`llm/stream` 请求必须与持久化推导一致，否则 agent-loop invariant 会报 `log-reconstruction desync`）。本插件用两条路径补上缺口：
 
-1. **`inspect_image` tool** — sends an image (local file, or http(s) URL) to
-   **any OpenAI-compatible** `/chat/completions` endpoint that supports
-   `image_url` content parts, and returns the vision model's textual answer
-   into the agent loop.
-2. **Image bridge (v0.1.1)** — when the active model is text-only, images
-   pasted into the conversation are intercepted on the `llm/stream`
-   waterfall, exported to a local file, and replaced with a text hint, so
-   the agent picks them up with `inspect_image`. Models listed in
-   `multimodalModels` receive image blocks directly instead.
+1. **`inspect_image` 工具** —— 把图片（本地文件或 http(s) URL）发给任意支持 `image_url` 内容块的 OpenAI 兼容 `/chat/completions` 端点，把视觉模型的文字回答带回对话。
+2. **图片桥（v0.2.0）** —— 粘贴的图片在**进入持久化日志之前**就被转换成 `inspect_image` 指引文本，拦截点是 `agent/pre-step` waterfall（这是 harness 唯一允许插件替换"进入某一步的消息"的缝；替换后的消息会**成为**持久化的 `user/message` 日志，所以请求重建 invariant 天然满足）。旧版本已经写进日志的图片消息，会在该会话下一次 pre-step 时用 surface `replace` 惰性修复。`multimodalModels` 白名单内的模型（或其 `inputModalities` 含 `image`）直接收图片块，不做转换。
 
-- Zero dependencies beyond the dsh SDK — works with any compatible endpoint:
-  OpenAI GPT-4o, Qwen-VL (DashScope), GLM-4V (Zhipu), Moonshot, Gemini
-  compatible endpoints, local Ollama, etc.
-- Registered on the **global tools layer**: every agent in the process can
-  call `inspect_image`.
+- 除 dsh SDK 外零依赖 —— 兼容任意端点：OpenAI GPT-4o、Qwen-VL（DashScope）、GLM-4V（智谱）、Moonshot、Gemini 兼容端点、本地 Ollama 等。
+- 注册在**全局工具层**：进程内所有 Agent 都能调用 `inspect_image`。
 
-## Install
+## 安装
 
-Mount in a profile patch (`$DSH_HOME/profiles/<name>/cordis.patch.yml`):
+在 profile patch（`$DSH_HOME/profiles/<name>/cordis.patch.yml`）里挂载：
 
 ```yaml
 - insert:
     - id: tool-vision
-      name: 'dsh-tool-vision'     # after: pnpm add dsh-tool-vision in the profile
+      name: 'dsh-tool-vision'     # 前置：在 profile 里 pnpm add dsh-tool-vision
       config:
         baseURL: 'https://api.openai.com/v1'
         apiKeyEnv: 'VISION_API_KEY'
         model: 'gpt-4o-mini'
 ```
 
-Or load it from a local path without npm:
+不装 npm 包、直接加载本地路径：
 
 ```yaml
     - id: tool-vision
       name: './plugins/dsh-tool-vision/index.js'
 ```
 
-## Config
+## 配置
 
-| Field | Default | Meaning |
+| 字段 | 默认值 | 含义 |
 |---|---|---|
-| `baseURL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL. |
-| `apiKey` | `''` | API key (takes precedence over env). |
-| `apiKeyEnv` | `VISION_API_KEY` | Env var holding the key. |
-| `model` | `gpt-4o-mini` | Vision model id. |
-| `maxTokens` | `1024` | Max output tokens. |
-| `timeoutMs` | `60000` | Per-request timeout. |
-| `maxImageBytes` | `10MB` | Largest accepted local image. |
-| `description` | default | Tool description shown to the model. |
-| `bridgeTextOnly` | `true` | Bridge pasted images to text hints for text-only models. |
-| `bridgeExportDir` | temp | Export dir for bridged images (`os.tmpdir()/dsh-vision-bridge`). |
-| `multimodalModels` | `[]` | Model ids that receive image blocks directly (e.g. `mimo-v2.5`). |
+| `baseURL` | `https://api.openai.com/v1` | OpenAI 兼容 API 基地址 |
+| `apiKey` | `''` | API 密钥（优先于环境变量） |
+| `apiKeyEnv` | `VISION_API_KEY` | 存放密钥的环境变量名 |
+| `model` | `gpt-4o-mini` | 视觉模型 id |
+| `maxTokens` | `1024` | 视觉调用最大输出 token |
+| `timeoutMs` | `60000` | 单次请求超时 |
+| `maxImageBytes` | `10MB` | 本地图片大小上限 |
+| `description` | 默认描述 | 工具描述（模型可见） |
+| `bridgeTextOnly` | `true` | 把粘贴图片转成文本指引（发给看不懂图片的模型时） |
+| `bridgeExportDir` | 临时目录 | 桥接图片导出目录（`os.tmpdir()/dsh-vision-bridge`） |
+| `multimodalModels` | `[]` | 直发图片块的模型 id（如 `mimo-v2.5`） |
 
-## Image bridge setup
+## 图片桥配置
 
-1. In your model settings, declare image input on the text models you use
-   (pi-ai style), so the harness lets image messages through:
+1. 在模型设置里给要贴图的模型声明图片输入（pi-ai 风格），让 harness 放行图片消息：
    ```yaml
    llm-pi-ai:
      providers:
@@ -70,8 +58,7 @@ Or load it from a local path without npm:
            - id: deepseek-v4-flash
              input: [text, image]
    ```
-2. List genuinely multimodal models in the plugin config so they receive
-   image blocks untouched:
+2. 在插件配置里列出真正多模态的模型，让它们直收图片块：
    ```yaml
    - id: tool-vision
      name: 'dsh-tool-vision'
@@ -79,36 +66,35 @@ Or load it from a local path without npm:
        multimodalModels: ['mimo-v2.5', 'grok-4.5']
    ```
 
-Then pasting an image while on a text-only model produces a hint like
+之后在文本模型下贴图，转录里会留下一条指引：
 `[User sent an image, exported to: <path>. Inspect it with the inspect_image tool...]`
-and the agent inspects it through the configured vision endpoint.
+（该消息不再以像素图形式渲染），Agent 会调用视觉端点查看并把结果带回对话。
 
-Key resolution order: `config.apiKey` → `process.env[apiKeyEnv]` →
-`process.env.OPENAI_API_KEY`.
+> 为什么不用 `llm/stream`？harness 会冻结每个请求，且 agent-loop invariant 会拒绝任何与会话日志推导不一致的请求；这个 cordis 版本的 waterfall `next()` 也无法替换请求参数。`agent/pre-step` 才是受支持的缝：它的决策消息**会成为**持久化日志，invariant 天然成立。
 
-## Tool: `inspect_image`
+密钥解析顺序：`config.apiKey` → `process.env[apiKeyEnv]` → `process.env.OPENAI_API_KEY`。
 
-| Arg | Required | Meaning |
+## 工具：`inspect_image`
+
+| 参数 | 必填 | 含义 |
 |---|---|---|
-| `path` | ✅ | Image path (absolute, or relative to the current workspace) or http(s) URL. |
-| `question` | – | Optional specific question about the image. |
-| `detail` | – | `auto` / `low` / `high` resolution hint. |
+| `path` | ✅ | 图片路径（绝对路径，或相对当前工作区）或 http(s) URL |
+| `question` | – | 可选的具体问题 |
+| `detail` | – | `auto` / `low` / `high` 分辨率提示 |
 
-Example endpoints (`baseURL`):
+示例端点（`baseURL`）：
 
-- **OpenAI**: `https://api.openai.com/v1` — `gpt-4o`, `gpt-4o-mini`
-- **Alibaba DashScope (Qwen-VL)**: `https://dashscope.aliyuncs.com/compatible-mode/v1` — `qwen-vl-plus`, `qwen-vl-max`
-- **Zhipu (GLM-4V)**: `https://open.bigmodel.cn/api/paas/v4` — `glm-4v-flash` (free tier), `glm-4v-plus`
-- **Moonshot (Kimi)**: `https://api.moonshot.cn/v1` — `moonshot-v1-8k-vision-preview`
-- **Ollama local**: `http://localhost:11434/v1` — `llama3.2-vision` (no key)
+- **OpenAI**：`https://api.openai.com/v1` —— `gpt-4o`、`gpt-4o-mini`
+- **阿里云 DashScope（Qwen-VL）**：`https://dashscope.aliyuncs.com/compatible-mode/v1` —— `qwen-vl-plus`、`qwen-vl-max`
+- **智谱（GLM-4V）**：`https://open.bigmodel.cn/api/paas/v4` —— `glm-4v-flash`（免费档）、`glm-4v-plus`
+- **Moonshot（Kimi）**：`https://api.moonshot.cn/v1` —— `moonshot-v1-8k-vision-preview`
+- **Ollama 本地**：`http://localhost:11434/v1` —— `llama3.2-vision`（无需密钥）
 
-## Limitations
+## 限制
 
-- The image enters the conversation as a text description (a transcript, not
-  pixels) — pixel-precise tasks may be inaccurate.
-- Images are base64-transferred; mind privacy and size limits.
-- Independent of the dsh-llm routing/retry system; failures return clear
-  errors to the agent.
+- 被桥接的图片以文本指引进入对话（转录而非像素）——文本模型无法做像素级上下文推理；视觉模型的描述通过 `inspect_image` 回传。
+- 图片以 base64 传输；注意隐私与大小限制。
+- 独立于 dsh-llm 的路由/重试体系；失败会向 Agent 返回明确错误。
 
 ## License
 
