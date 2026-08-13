@@ -160,24 +160,21 @@ async function bridgeMessages(messages, ctx, dir) {
 }
 
 /**
- * Whether the session's current model can see images directly. Uses the last
- * logged request header first, then the agent's own options; falls back to
- * the `multimodalModels` whitelist and the resolved input modalities.
+ * Whether the session's current model may receive image blocks directly.
+ * Uses the last logged request header first, then the agent's own options,
+ * and consults ONLY the `multimodalModels` whitelist — never the model's
+ * declared `inputModalities`, because profiles routinely declare
+ * `input: [text, image]` on text-only models to pass the harness's prompt
+ * admission check (that declaration says nothing about whether the upstream
+ * endpoint really accepts `image_url` parts).
  * Returns true when bridging is disabled (nothing would be bridged anyway).
  */
-async function currentModelAcceptsImage(ctx, agent, config) {
+async function currentModelAcceptsImage(agent, config) {
   if (!config.bridgeTextOnly) return true;
   const header = agent?.session?.requestHeader?.();
-  const provider = header?.config?.provider ?? agent?.options?.provider;
   const model = header?.config?.model ?? agent?.options?.model;
   if (!model) return false;
-  if (config.multimodalModels.includes(model)) return true;
-  try {
-    const info = await ctx.llm.resolveModelInfo(provider, model);
-    return info.inputModalities?.includes("image") ?? false;
-  } catch {
-    return false;
-  }
+  return config.multimodalModels.includes(model);
 }
 
 /**
@@ -218,23 +215,28 @@ async function repairLoggedImages(ctx, session, exportDir, repaired) {
 }
 
 /**
- * Install one agent's pre-step bridge. Runs before every proposed step, so
- * new pasted images are bridged into the durable log (and stuck logged
- * images are repaired) before the model request is derived from it.
+ * Install the pre-step bridge at the root level. Agent-scoped waterfalls
+ * admit untagged (root) listeners, so one listener serves every agent —
+ * including sessions resumed after a server restart, which never re-fire
+ * `session/created` for per-agent attachments. Runs before every proposed
+ * step: new pasted images are bridged into the durable log, and stuck
+ * logged images are repaired, before the model request is derived from it.
  */
-function attachPreStepBridge(ctx, agent, config, exportDir, repaired) {
-  agent.ctx.on("agent/pre-step", async (payload, next) => {
-    let decision;
-    try {
-      decision = await next();
-    } catch (error) {
-      ctx.logger.warn(`[tool-vision] pre-step downstream failed: ${String(error)}`);
-      return;
-    }
+function attachPreStepBridge(ctx, config, exportDir) {
+  const repairedBySession = new Map();
+  ctx.on("agent/pre-step", async (payload, next) => {
+    const decision = await next();
     if (!decision || decision.kind !== "enter") return decision;
+    const agent = payload?.agent;
+    if (!agent?.session) return decision;
     try {
-      const acceptsImage = await currentModelAcceptsImage(ctx, agent, config);
+      const acceptsImage = await currentModelAcceptsImage(agent, config);
       if (!acceptsImage) {
+        let repaired = repairedBySession.get(agent.session.id);
+        if (!repaired) {
+          repaired = { set: new Set(), cursor: 0 };
+          repairedBySession.set(agent.session.id, repaired);
+        }
         await repairLoggedImages(ctx, agent.session, exportDir, repaired).catch((error) => {
           ctx.logger.warn(`[tool-vision] logged-image repair failed: ${String(error)}`);
         });
@@ -341,22 +343,10 @@ function apply(ctx, config) {
   if (config.bridgeTextOnly) {
     const exportDir = config.bridgeExportDir || join(os.tmpdir(), "dsh-vision-bridge");
     mkdir(exportDir, { recursive: true }).catch(() => {});
-    // Agent-scoped events must be listened on `agent.ctx`; agents appear
-    // right after their session is announced, so defer one tick and attach.
-    ctx.on("session/created", (session) => {
-      setTimeout(() => {
-        try {
-          const agent = ctx.get("agents")?.get?.(session.id);
-          if (!agent?.ctx) return;
-          attachPreStepBridge(ctx, agent, config, exportDir, {
-            set: new Set(),
-            cursor: 0,
-          });
-        } catch (error) {
-          ctx.logger.warn(`[tool-vision] bridge attach failed: ${String(error)}`);
-        }
-      }, 0);
-    });
+    // Root-level listener: agent-scoped waterfalls admit untagged listeners,
+    // so one registration serves every agent (new and resumed alike) and the
+    // agent is read from the fused payload.
+    attachPreStepBridge(ctx, config, exportDir);
   }
 
   ctx.tools.register(defineTool({

@@ -11,13 +11,15 @@ in two ways:
    **any OpenAI-compatible** `/chat/completions` endpoint that supports
    `image_url` content parts, and returns the vision model's textual answer
    into the agent loop.
-2. **Image bridge (v0.2.0)** — pasted images are turned into `inspect_image`
+2. **Image bridge (v0.2.1)** — pasted images are turned into `inspect_image`
    hints *before they enter the durable log*, on the `agent/pre-step`
    waterfall (the one seam where the harness lets a plugin replace the
    messages of a proposed step). Images already logged by an older version
    are repaired lazily with a surface `replace` on the session's first
-   pre-step. Models listed in `multimodalModels` (or whose resolved
-   `inputModalities` include `image`) receive image blocks directly instead.
+   pre-step. Only models listed in `multimodalModels` receive image blocks
+   directly; a model's declared `inputModalities` are never consulted,
+   because profiles routinely declare `input: [text, image]` on text-only
+   models just to pass the harness's prompt-admission check.
 
 - Zero dependencies beyond the dsh SDK — works with any compatible endpoint:
   OpenAI GPT-4o, Qwen-VL (DashScope), GLM-4V (Zhipu), Moonshot, Gemini
