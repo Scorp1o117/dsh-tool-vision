@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-vision",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "External vision model for DeepSeek Harness: inspect_image sends local images or http(s) image URLs to any OpenAI-compatible chat/completions endpoint and returns the vision model's text answer.",
   "type": "module",
   "main": "index.js",

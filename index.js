@@ -52,7 +52,7 @@ const Config = z.object({
   /** Vision model id served by the endpoint. */
   model: z.string().default("gpt-4o-mini"),
   /** Max output tokens for the vision call. */
-  maxTokens: z.number().default(1024),
+  maxTokens: z.number().default(4096),
   /** Per-request timeout in milliseconds. */
   timeoutMs: z.number().default(60000),
   /** Largest local image accepted, in bytes. */
@@ -327,7 +327,13 @@ async function callVision(config, imageUrl, question, detail, signal) {
         `vision endpoint returned ${response.status}: ${detailText} (endpoint ${endpoint})`,
       );
     }
-    const answer = body?.choices?.[0]?.message?.content;
+    // Reasoning models (mimo-v2.5, deepseek-r1, ...) spend the token budget on
+    // `reasoning_content` first; when the final `content` is empty or was cut
+    // off by max_tokens, fall back to the reasoning text so the answer is
+    // still useful.
+    const message = body?.choices?.[0]?.message;
+    let answer = message?.content ?? "";
+    if (!answer.trim()) answer = message?.reasoning_content ?? "";
     if (typeof answer !== "string" || !answer.trim()) {
       throw new Error("vision endpoint returned an empty response");
     }
