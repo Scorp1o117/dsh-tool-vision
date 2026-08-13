@@ -1,24 +1,29 @@
 /**
  * dsh-tool-vision — external vision model for DeepSeek Harness.
  *
- * DeepSeek's own models are text-only, and dsh-llm has no multimodal content
- * block type yet. This plugin bridges the gap with a model-facing tool that
- * sends an image (local file, or http(s) URL) to any OpenAI-compatible
- * chat/completions endpoint that supports `image_url` content parts, and
- * returns the vision model's textual answer into the agent loop.
+ * Two capabilities:
  *
- * Registered on the GLOBAL tools layer, so every agent in the process can
- * call `inspect_image`.
+ * 1. `inspect_image` tool — sends an image (local file, or http(s) URL) to
+ *    any OpenAI-compatible chat/completions endpoint that supports
+ *    `image_url` content parts, and returns the vision model's text answer.
+ *
+ * 2. Image bridge — when the current model is text-only (e.g. DeepSeek),
+ *    pasted images in user messages are intercepted on the `llm/stream`
+ *    waterfall, exported to a local file, and replaced with a text hint
+ *    pointing at that path, so the agent can hand the image to
+ *    `inspect_image`. Models listed in `multimodalModels` are left
+ *    untouched (they receive image blocks directly).
  */
-import { readFile, stat } from "node:fs/promises";
-import { extname, isAbsolute, resolve as resolvePath } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { extname, isAbsolute, join, resolve as resolvePath } from "node:path";
+import os from "node:os";
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 
 /** Cordis plugin name. */
 const name = "tool-vision";
-/** The tool registry this row contributes to. */
-const inject = ["tools"];
+/** The tool registry, the llm seam (waterfall), and the attachment store. */
+const inject = ["tools", "llm", "attachments"];
 
 const DEFAULT_DESCRIPTION =
   "Analyze an image using an external vision-capable model through an OpenAI-compatible API. " +
@@ -45,6 +50,12 @@ const Config = z.object({
   maxImageBytes: z.number().default(10 * 1024 * 1024),
   /** Tool description shown to the model; overrides the default. */
   description: z.string().default(DEFAULT_DESCRIPTION),
+  /** Bridge pasted images to text hints when the current model is text-only. */
+  bridgeTextOnly: z.boolean().default(true),
+  /** Export directory for bridged images; empty = system temp. */
+  bridgeExportDir: z.string().default(""),
+  /** Model ids that receive image blocks directly (never bridged). */
+  multimodalModels: z.array(z.string()).default([]),
 });
 
 const MIME_BY_EXT = {
@@ -58,6 +69,73 @@ const MIME_BY_EXT = {
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
 };
+
+const EXT_BY_MEDIA = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+};
+
+/** True when any message carries an image content block. */
+function hasImageBlock(messages) {
+  return (messages ?? []).some((m) =>
+    Array.isArray(m?.content) && m.content.some((b) => b?.type === "image"),
+  );
+}
+
+/** Export one attachment to disk; returns the file path (cached per process). */
+const exportedPaths = new Map();
+async function exportImage(attachment, ctx, dir) {
+  const cached = exportedPaths.get(attachment.attachmentId);
+  if (cached) return cached;
+  const { data } = await ctx.attachments.readImage(attachment);
+  const ext = EXT_BY_MEDIA[attachment.mediaType] ?? ".img";
+  const safeName = attachment.name
+    ? attachment.name
+        .replace(/\.[^.]+$/, "")
+        .replace(/[^\w\-]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 40)
+    : "";
+  const base = (safeName ? `${safeName}_` : "") + attachment.attachmentId.slice(0, 12);
+  const path = join(dir, `${base}${ext}`);
+  await writeFile(path, data);
+  exportedPaths.set(attachment.attachmentId, path);
+  return path;
+}
+
+/**
+ * Replace image content blocks with text hints pointing at exported files.
+ * Exported for unit testing; `ctx` only needs `attachments`.
+ */
+async function bridgeMessages(messages, ctx, dir) {
+  const next = [];
+  for (const message of messages) {
+    const content = message?.content;
+    if (!Array.isArray(content) || !content.some((b) => b?.type === "image")) {
+      next.push(message);
+      continue;
+    }
+    const blocks = [];
+    for (const block of content) {
+      if (block?.type !== "image") {
+        blocks.push(block);
+        continue;
+      }
+      const path = await exportImage(block.attachment, ctx, dir);
+      const name = block.attachment.name ? ` (${block.attachment.name})` : "";
+      blocks.push({
+        type: "text",
+        text:
+          `[User sent an image${name}, exported to: ${path}. ` +
+          `Inspect it with the inspect_image tool to see its content.]`,
+      });
+    }
+    next.push({ ...message, content: blocks });
+  }
+  return next;
+}
 
 function resolveApiKey(config) {
   if (config.apiKey) return config.apiKey;
@@ -146,6 +224,23 @@ async function callVision(config, imageUrl, question, detail, signal) {
 }
 
 function apply(ctx, config) {
+  // ── image bridge: text-only models get exported paths instead of pixels ──
+  if (config.bridgeTextOnly) {
+    const exportDir = config.bridgeExportDir || join(os.tmpdir(), "dsh-vision-bridge");
+    mkdir(exportDir, { recursive: true }).catch(() => {});
+    ctx.on("llm/stream", async (options) => {
+      try {
+        if (!options?.messages || !hasImageBlock(options.messages)) return options;
+        if (config.multimodalModels.includes(options.model)) return options;
+        const messages = await bridgeMessages(options.messages, ctx, exportDir);
+        return { ...options, messages };
+      } catch (error) {
+        ctx.logger.warn(`[tool-vision] image bridge failed: ${String(error)}`);
+        return options;
+      }
+    });
+  }
+
   ctx.tools.register(defineTool({
     name: "inspect_image",
     description: config.description,
@@ -178,4 +273,14 @@ function apply(ctx, config) {
   }));
 }
 
-export { Config, DEFAULT_DESCRIPTION, apply, inject, name };
+export {
+  Config,
+  DEFAULT_DESCRIPTION,
+  EXT_BY_MEDIA,
+  apply,
+  bridgeMessages,
+  exportImage,
+  hasImageBlock,
+  inject,
+  name,
+};

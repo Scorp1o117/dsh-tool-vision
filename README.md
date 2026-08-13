@@ -3,10 +3,17 @@
 External vision model for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
 DeepSeek's own models are text-only, and dsh-llm has no multimodal content
-block yet. This plugin bridges the gap with a model-facing tool that sends an
-image (local file, or http(s) URL) to **any OpenAI-compatible**
-`/chat/completions` endpoint that supports `image_url` content parts, and
-returns the vision model's textual answer into the agent loop.
+block yet. This plugin bridges the gap in two ways:
+
+1. **`inspect_image` tool** — sends an image (local file, or http(s) URL) to
+   **any OpenAI-compatible** `/chat/completions` endpoint that supports
+   `image_url` content parts, and returns the vision model's textual answer
+   into the agent loop.
+2. **Image bridge (v0.1.1)** — when the active model is text-only, images
+   pasted into the conversation are intercepted on the `llm/stream`
+   waterfall, exported to a local file, and replaced with a text hint, so
+   the agent picks them up with `inspect_image`. Models listed in
+   `multimodalModels` receive image blocks directly instead.
 
 - Zero dependencies beyond the dsh SDK — works with any compatible endpoint:
   OpenAI GPT-4o, Qwen-VL (DashScope), GLM-4V (Zhipu), Moonshot, Gemini
@@ -47,6 +54,34 @@ Or load it from a local path without npm:
 | `timeoutMs` | `60000` | Per-request timeout. |
 | `maxImageBytes` | `10MB` | Largest accepted local image. |
 | `description` | default | Tool description shown to the model. |
+| `bridgeTextOnly` | `true` | Bridge pasted images to text hints for text-only models. |
+| `bridgeExportDir` | temp | Export dir for bridged images (`os.tmpdir()/dsh-vision-bridge`). |
+| `multimodalModels` | `[]` | Model ids that receive image blocks directly (e.g. `mimo-v2.5`). |
+
+## Image bridge setup
+
+1. In your model settings, declare image input on the text models you use
+   (pi-ai style), so the harness lets image messages through:
+   ```yaml
+   llm-pi-ai:
+     providers:
+       your-provider:
+         models:
+           - id: deepseek-v4-flash
+             input: [text, image]
+   ```
+2. List genuinely multimodal models in the plugin config so they receive
+   image blocks untouched:
+   ```yaml
+   - id: tool-vision
+     name: 'dsh-tool-vision'
+     config:
+       multimodalModels: ['mimo-v2.5', 'grok-4.5']
+   ```
+
+Then pasting an image while on a text-only model produces a hint like
+`[User sent an image, exported to: <path>. Inspect it with the inspect_image tool...]`
+and the agent inspects it through the configured vision endpoint.
 
 Key resolution order: `config.apiKey` → `process.env[apiKeyEnv]` →
 `process.env.OPENAI_API_KEY`.
