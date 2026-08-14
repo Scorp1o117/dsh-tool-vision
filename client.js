@@ -116,10 +116,7 @@ window.__ModuleLoader__.load({
     function VisionSection(props) {
       var t = props.t;
       var scope = props.scope;
-      var snapshot = react.useSyncExternalStore(
-        function (cb) { return scope.subscribe(cb); },
-        function () { return scope.getSnapshot(); }
-      );
+      var [snapshot, setSnapshot] = react.useState(function () { return scope.getSnapshot(); });
       var ready = snapshot.status === "ready" && snapshot.value !== void 0;
       var [draft, setDraft] = react.useState({});
       var [busy, setBusy] = react.useState(false);
@@ -128,13 +125,19 @@ window.__ModuleLoader__.load({
 
       react.useEffect(function () {
         scope.load();
-        return function () { scope.dispose(); };
+        var alive = true;
+        var sync = function () { if (alive) setSnapshot(scope.getSnapshot()); };
+        var un = typeof scope.subscribe === "function" ? scope.subscribe(sync) : null;
+        return function () { alive = false; if (un) un(); if (scope.dispose) scope.dispose(); };
       }, [scope]);
-      // Re-seed the draft when the snapshot value changes (after a save or a host change).
+      // Seed the draft ONLY when the snapshot becomes ready — never on value
+      // churn. settingsScope.getSnapshot() returns a fresh object per call,
+      // so depending on snapshot.value would reset user input on every render
+      // (typing appears dead).
       react.useEffect(function () {
         if (ready) setDraft(function (prev) { return Object.assign({}, prev, valueToDraft(snapshot.value)); });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [ready, snapshot.value]);
+      }, [ready]);
 
       if (snapshot.status === "unavailable") {
         return h("p", { className: "__tv_unavailable" }, t("unavailable"));
@@ -184,15 +187,34 @@ window.__ModuleLoader__.load({
         });
         Promise.all(writes).then(function () {
           setBusy(false); setNotice(t("saved"));
+          if (scope.load) scope.load();
         }).catch(function (e) {
           setBusy(false); setError(t("error") + ": " + String(e && e.message || e));
         });
+      }
+
+      function reseedDraft() {
+        if (typeof scope.load === "function") {
+          var p = scope.load();
+          if (p && typeof p.then === "function") {
+            p.then(function () {
+              var fresh = scope.getSnapshot();
+              if (fresh.status === "ready" && fresh.value !== void 0) setDraft(Object.assign({}, valueToDraft(fresh.value)));
+            }).catch(function () {});
+            return;
+          }
+        }
+        setTimeout(function () {
+          var fresh = scope.getSnapshot();
+          if (fresh.status === "ready" && fresh.value !== void 0) setDraft(Object.assign({}, valueToDraft(fresh.value)));
+        }, 120);
       }
 
       function onReset() {
         setBusy(true); setNotice(null); setError(null);
         Promise.all(FIELDS.map(function (f) { return scope.unset(f.key); })).then(function () {
           setBusy(false); setNotice(t("saved"));
+          reseedDraft();
         }).catch(function (e) {
           setBusy(false); setError(t("error") + ": " + String(e && e.message || e));
         });
