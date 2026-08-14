@@ -1,5 +1,9 @@
 # dsh-tool-vision
 
+[![中文文档](https://img.shields.io/badge/%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-blue)](README.zh.md)
+
+**GitHub**: [Scorp1o117/dsh-tool-vision](https://github.com/Scorp1o117/dsh-tool-vision) · **npm**: [dsh-tool-vision](https://www.npmjs.com/package/dsh-tool-vision)
+
 External vision model for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
 DeepSeek's own models are text-only, and the harness derives every model
