@@ -1,0 +1,26 @@
+name: BOM check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  bom-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for UTF-8 BOM
+        run: |
+          set -euo pipefail
+          bad=0
+          while IFS= read -r -d '' f; do
+            if [ "$(head -c 3 "$f" | od -An -tx1 | tr -d ' \n')" = "efbbbf" ]; then
+              echo "BOM detected: $f"
+              bad=1
+            fi
+          done < <(find . -type f -not -path './.git/*' -print0)
+          if [ $bad -eq 1 ]; then
+            echo "::error::UTF-8 BOM found — JSON.parse in DSH breaks on BOM; strip it (save as UTF-8 without BOM)"
+            exit 1
+          fi
+          echo "No UTF-8 BOM found"
