@@ -26,6 +26,11 @@ in two ways:
   compatible endpoints, local Ollama, etc.
 - Registered on the **global tools layer**: every agent in the process can
   call `inspect_image`.
+- **Web UI settings section (v0.3.0)**: Settings → 视觉模型 edits the
+  `tool-vision` namespace (API endpoint, write-only key, model, bridge
+  options) in `settings.yaml`; changes hot-apply without a restart. The API
+  key lives in `settings.yaml`, not the profile patch. Mount by package name
+  (`name: 'dsh-tool-vision'`) so the web client bundle is discovered.
 
 ## Install
 

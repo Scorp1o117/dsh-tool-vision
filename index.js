@@ -28,11 +28,14 @@ import { extname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import os from "node:os";
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
 
 /** Cordis plugin name. */
 const name = "tool-vision";
 /** The tool registry, the llm seam (model capability lookup), and the attachment store. */
 const inject = ["tools", "llm", "attachments"];
+/** Settings namespace owned by this plugin (Web UI settings section). */
+const NS = settingsNamespace("tool-vision");
 
 const DEFAULT_DESCRIPTION =
   "Analyze an image using an external vision-capable model through an OpenAI-compatible API. " +
@@ -45,8 +48,8 @@ const DEFAULT_DESCRIPTION =
 const Config = z.object({
   /** Base URL of an OpenAI-compatible API, e.g. https://api.openai.com/v1 or https://dashscope.aliyuncs.com/compatible-mode/v1 */
   baseURL: z.string().default("https://api.openai.com/v1"),
-  /** API key; takes precedence over apiKeyEnv. */
-  apiKey: z.string().default(""),
+  /** API key; takes precedence over apiKeyEnv. Rendered as a write-only secret in the Web UI. */
+  apiKey: z.string().default("").role("secret"),
   /** Environment variable holding the API key. */
   apiKeyEnv: z.string().default("VISION_API_KEY"),
   /** Vision model id served by the endpoint. */
@@ -222,7 +225,7 @@ async function repairLoggedImages(ctx, session, exportDir, repaired) {
  * step: new pasted images are bridged into the durable log, and stuck
  * logged images are repaired, before the model request is derived from it.
  */
-function attachPreStepBridge(ctx, config, exportDir) {
+function attachPreStepBridge(ctx, getConfig, exportDir) {
   const repairedBySession = new Map();
   ctx.on("agent/pre-step", async (payload, next) => {
     const decision = await next();
@@ -230,7 +233,7 @@ function attachPreStepBridge(ctx, config, exportDir) {
     const agent = payload?.agent;
     if (!agent?.session) return decision;
     try {
-      const acceptsImage = await currentModelAcceptsImage(agent, config);
+      const acceptsImage = await currentModelAcceptsImage(agent, getConfig());
       if (!acceptsImage) {
         let repaired = repairedBySession.get(agent.session.id);
         if (!repaired) {
@@ -345,19 +348,32 @@ async function callVision(config, imageUrl, question, detail, signal) {
 }
 
 function apply(ctx, config) {
+  // ── settings-backed configuration ─────────────────────────────────────────
+  // The composition entry stays the `base` layer; a registered `tool-vision`
+  // settings section (Web UI section, settings.yaml) overlays it live, so
+  // edits hot-apply without a restart. `current` is read at use time.
+  let current = config;
+  const getConfig = () => current;
+  installSettingsSection(ctx, NS, Config, config, {
+    setSource: (source) => {
+      current = source;
+    },
+    onChange: () => {},
+  });
+
   // ── image bridge: pasted images become inspect_image hints on text-only models ──
-  if (config.bridgeTextOnly) {
-    const exportDir = config.bridgeExportDir || join(os.tmpdir(), "dsh-vision-bridge");
+  if (getConfig().bridgeTextOnly) {
+    const exportDir = getConfig().bridgeExportDir || join(os.tmpdir(), "dsh-vision-bridge");
     mkdir(exportDir, { recursive: true }).catch(() => {});
     // Root-level listener: agent-scoped waterfalls admit untagged listeners,
     // so one registration serves every agent (new and resumed alike) and the
     // agent is read from the fused payload.
-    attachPreStepBridge(ctx, config, exportDir);
+    attachPreStepBridge(ctx, getConfig, exportDir);
   }
 
   ctx.tools.register(defineTool({
     name: "inspect_image",
-    description: config.description,
+    description: getConfig().description,
     parameters: {
       path: {
         type: "string",
@@ -379,9 +395,10 @@ function apply(ctx, config) {
       render: (_args, value) => [{ type: "text", text: value }],
     },
     async execute(args, exec) {
+      const cfg = getConfig();
       const cwd = exec.agent?.session?.header?.cwd ?? process.cwd();
-      const { url, note } = await toImageUrl(args.path, cwd, config);
-      const answer = await callVision(config, url, args.question, args.detail, exec.signal);
+      const { url, note } = await toImageUrl(args.path, cwd, cfg);
+      const answer = await callVision(cfg, url, args.question, args.detail, exec.signal);
       return note === url ? answer : `${answer}\n\n(image: ${note})`;
     },
   }));
