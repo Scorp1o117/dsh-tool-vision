@@ -1,4 +1,4 @@
-﻿/**
+/**
  * dsh-tool-vision — browser half.
  *
  * A "视觉模型" section inside the Web UI settings page: edits the
