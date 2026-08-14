@@ -351,12 +351,16 @@ function apply(ctx, config) {
   // ── settings-backed configuration ─────────────────────────────────────────
   // The composition entry stays the `base` layer; a registered `tool-vision`
   // settings section (Web UI section, settings.yaml) overlays it live, so
-  // edits hot-apply without a restart. `current` is read at use time.
+  // edits hot-apply without a restart. `installSettingsSection` hands
+  // `setSource` a GETTER (`() => scope.get()`), not the config object — keep
+  // it and call it at use time, or `getConfig()` would return a function and
+  // every `cfg.*` read would be undefined (apiKey included).
   let current = config;
-  const getConfig = () => current;
+  let sourceGetter = null;
+  const getConfig = () => (sourceGetter ? sourceGetter() : current);
   installSettingsSection(ctx, NS, Config, config, {
-    setSource: (source) => {
-      current = source;
+    setSource: (getter) => {
+      sourceGetter = getter;
     },
     onChange: () => {},
   });
