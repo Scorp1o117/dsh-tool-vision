@@ -131,8 +131,9 @@ Example endpoints (`baseURL`):
 
 
 > **Note for users**
-> - `dsh plugin` prints "declares no dsh.bundle — installed as a plain
->   dependency" — **expected**: this plugin mounts via `cordis.patch.yml`.
+> - This plugin is a standard **profile bundle** (`dsh.bundle.patch`):
+>   `dsh plugin --profile web add dsh-tool-vision` installs and mounts it in
+>   one step — no manual `cordis.patch.yml` edits needed.
 > - The settings section needs the `dsh-host-apiproxy` namespace allowlist;
 >   the plugin patches it automatically on first start — **restart `dsh web`
 >   once more** and the section appears. A dsh update overwrites the patch;
