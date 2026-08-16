@@ -2,6 +2,10 @@
 
 **GitHub**: [Scorp1o117/dsh-tool-vision](https://github.com/Scorp1o117/dsh-tool-vision) · **npm**: [dsh-tool-vision](https://www.npmjs.com/package/dsh-tool-vision) · [English](README.md)
 
+[![Enhancement Suite](https://img.shields.io/badge/part%20of-Enhancement%20Suite-3964fe)](https://github.com/Scorp1o117/dsh-enhancement-suite) [![npm](https://img.shields.io/npm/v/dsh-enhancement-suite)](https://www.npmjs.com/package/dsh-enhancement-suite)
+
+属于 [DeepSeek Harness Enhancement Suite](https://github.com/Scorp1o117/dsh-enhancement-suite) —— Vision · Soul/Persona · 长期记忆 · 插件市场。
+
 给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 外接**视觉模型**的插件。
 
 DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**严格从会话日志推导**（`llm/stream` 请求必须与持久化推导一致，否则 agent-loop invariant 会报 `log-reconstruction desync`）。本插件用两条路径补上缺口：
