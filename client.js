@@ -56,6 +56,16 @@ window.__ModuleLoader__.load({
       bridgeTextOnly: "图片桥接（文本模型贴图自动转 inspect_image 指引）",
       bridgeExportDir: "桥接图片导出目录（空 = 系统临时目录）",
       multimodalModels: "多模态白名单（逗号分隔，这些模型直收图片块）",
+      fieldBaseUrl: "API Base URL",
+      fieldApiKey: "API Key",
+      fieldApiKeyEnv: "API Key 环境变量（apiKey 为空时读取）",
+      fieldModel: "视觉模型",
+      fieldMaxTokens: "最大输出 Tokens",
+      fieldTimeoutMs: "请求超时（毫秒）",
+      fieldMaxImageBytes: "图片大小上限（字节）",
+      fieldBridgeTextOnly: "图片桥接开关",
+      fieldBridgeExportDir: "桥接导出目录",
+      fieldMultimodalModels: "多模态白名单（逗号分隔）",
       save: "保存",
       reset: "恢复默认",
       saved: "已保存",
@@ -75,6 +85,16 @@ window.__ModuleLoader__.load({
       bridgeTextOnly: "Image bridge (pasted images on text-only models become inspect_image hints)",
       bridgeExportDir: "Bridge export dir (empty = system temp)",
       multimodalModels: "Multimodal whitelist (comma-separated; these models receive image blocks directly)",
+      fieldBaseUrl: "API Base URL",
+      fieldApiKey: "API Key",
+      fieldApiKeyEnv: "API key env var (read when apiKey is empty)",
+      fieldModel: "Vision model",
+      fieldMaxTokens: "Max output tokens",
+      fieldTimeoutMs: "Request timeout (ms)",
+      fieldMaxImageBytes: "Max image size (bytes)",
+      fieldBridgeTextOnly: "Image bridge",
+      fieldBridgeExportDir: "Bridge export dir",
+      fieldMultimodalModels: "Multimodal whitelist (comma-separated)",
       save: "Save",
       reset: "Reset",
       saved: "Saved",
@@ -87,16 +107,16 @@ window.__ModuleLoader__.load({
 
     // ── field spec ────────────────────────────────────────────────────────
     var FIELDS = [
-      { key: "baseURL", label: "API Base URL", type: "text", placeholder: "https://api.openai.com/v1" },
-      { key: "apiKey", label: "API Key", type: "password", secret: true },
-      { key: "apiKeyEnv", label: "API Key 环境变量（apiKey 为空时读取）", type: "text" },
-      { key: "model", label: "视觉模型", type: "text", placeholder: "gpt-4o-mini" },
-      { key: "maxTokens", label: "最大输出 Tokens", type: "number" },
-      { key: "timeoutMs", label: "请求超时（毫秒）", type: "number" },
-      { key: "maxImageBytes", label: "图片大小上限（字节）", type: "number" },
-      { key: "bridgeTextOnly", label: "图片桥接开关", type: "checkbox" },
-      { key: "bridgeExportDir", label: "桥接导出目录", type: "text" },
-      { key: "multimodalModels", label: "多模态白名单（逗号分隔）", type: "csv" }
+      { key: "baseURL", label: "fieldBaseUrl", type: "text", placeholder: "https://api.openai.com/v1" },
+      { key: "apiKey", label: "fieldApiKey", type: "password", secret: true },
+      { key: "apiKeyEnv", label: "fieldApiKeyEnv", type: "text" },
+      { key: "model", label: "fieldModel", type: "text", placeholder: "gpt-4o-mini" },
+      { key: "maxTokens", label: "fieldMaxTokens", type: "number" },
+      { key: "timeoutMs", label: "fieldTimeoutMs", type: "number" },
+      { key: "maxImageBytes", label: "fieldMaxImageBytes", type: "number" },
+      { key: "bridgeTextOnly", label: "fieldBridgeTextOnly", type: "checkbox" },
+      { key: "bridgeExportDir", label: "fieldBridgeExportDir", type: "text" },
+      { key: "multimodalModels", label: "fieldMultimodalModels", type: "csv" }
     ];
     var ZH_HINTS = {
       apiKey: "apiKeyHint",
@@ -108,8 +128,8 @@ window.__ModuleLoader__.load({
       multimodalModels: "multimodalModels"
     };
 
-    function labelOf(f) {
-      return f.label;
+    function labelOf(f, t) {
+      return t(f.label);
     }
 
     // ── component ─────────────────────────────────────────────────────────
@@ -228,7 +248,7 @@ window.__ModuleLoader__.load({
             return h("label", { key: f.key, className: "__tv_field" },
               h("span", { className: "__tv_row" },
                 h("input", { className: "__tv_check", type: "checkbox", checked: Boolean(fieldDraft(f)), onChange: function (e) { setField(f, e.target.checked); } }),
-                h("span", { className: "__tv_label" }, labelOf(f)),
+                h("span", { className: "__tv_label" }, labelOf(f, t)),
                 overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null
               ),
               f.key in ZH_HINTS ? h("span", { className: "__tv_hint" }, t(ZH_HINTS[f.key])) : null
@@ -236,7 +256,7 @@ window.__ModuleLoader__.load({
           }
           return h("label", { key: f.key, className: "__tv_field" },
             h("span", { className: "__tv_label" },
-              labelOf(f),
+              labelOf(f, t),
               overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null
             ),
             h("input", {
