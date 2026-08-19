@@ -113,6 +113,43 @@ DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**
 - **Moonshot（Kimi）**：`https://api.moonshot.cn/v1` —— `moonshot-v1-8k-vision-preview`
 - **Ollama 本地**：`http://localhost:11434/v1` —— `llama3.2-vision`（无需密钥）
 
+## 像素级视觉工具(v0.6.0,移植自 dsh-vision-router)
+
+14 个 `vision_*` 工具由**同一个** `inspect_image` 配置的端点驱动
+(baseURL/apiKey/model)——无 provider 链、无本地模型、零新增配置:
+
+| 工具 | 用途 |
+|---|---|
+| `vision_describe` | 看图问答 / 多图对比(可选结构化 JSON) |
+| `vision_ground` | 定位目标,返回原图像素坐标框 |
+| `vision_detect` | 枚举元素(按钮/输入框/图标…),带编号框 |
+| `vision_crop` | 按像素区域裁剪出 PNG 产物 |
+| `vision_pixel_diff` | 逐像素对比:差异比例、最差区域、热图、报告 |
+| `vision_colors` | 主色量化,还原 UI 调色板 |
+| `vision_ocr` | 逐字转写文字(只读字,不做场景识别) |
+| `vision_long_screenshot_ocr` | 长截图分块转写为 Markdown |
+| `vision_trace` | potrace 矢量化输出彩色 SVG(worker 线程,安全) |
+| `vision_extract_foreground` | 纯色背景抠图 → 透明 PNG |
+| `vision_html_screenshot` | 本地 HTML 无头渲染截图(禁网) |
+| `vision_screenshot` | 桌面截屏(Win: PowerShell;macOS: screencapture;Linux: import/scrot) |
+| `vision_present` | 通过宿主附件库把生成的图片正式展示给用户 |
+| `vision_materialize` | 把附件/本地图片落盘为工作区真实路径 |
+
+质量与安全细节:
+
+- **内容哈希缓存**按 端点+模型+图片+问题 取键(切模型不吃旧答案,失败结果
+  不入缓存);
+- **统一 4MP 降采样**后再调用模型;超大输入 stat 预检直接拒绝(文件与
+  附件路径统一 20MB 上限);
+- **限流/5xx 自动重试**(感知 Retry-After 退避);端点**内容安全拒绝**明确
+  返回 `VISION_CONTENT_FILTERED`,不再误报后端不可用;
+- **长截图 OCR 边界**:120s 总预算、40 块上限、取消检查、首块失败即停;
+- **路径 containment**(相对输入禁止逃逸工作区);产物写入
+  `<工作区>/.dsh-tool-vision/`。
+
+依赖 `sharp` / `potrace` / `puppeteer-core`(已声明;缺失时懒加载降级并
+给出安装提示,不影响其他工具)。
+
 ## 限制
 
 - 被桥接的图片以文本指引进入对话（转录而非像素）——文本模型无法做像素级上下文推理；视觉模型的描述通过 `inspect_image` 回传。
@@ -121,4 +158,6 @@ DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**
 
 ## License
 
-MIT
+MIT —— 桥接预览与整合:xing666173。像素级视觉工具移植自
+[dsh-vision-router](https://github.com/ysr666/dsh-vision-router)(© ysr666,MIT),
+在此致谢。

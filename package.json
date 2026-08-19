@@ -5,7 +5,7 @@
     "type":  "module",
     "main":  "index.js",
     "scripts":  {
-                    "test":  "node tests/preview-regex.test.mjs && node tests/preview-route.test.mjs && node tests/auto-image.test.mjs"
+                    "test":  "node tests/preview-regex.test.mjs && node tests/preview-route.test.mjs && node tests/auto-image.test.mjs && node --test tests/vision-tools.test.js tests/vision-tools-tools.test.js"
                 },
     "exports":  {
                     ".":  "./index.js",
@@ -27,6 +27,7 @@
                   "README.md",
                   "README.zh.md",
                   "LICENSE",
+                  "lib",
                   "vendor"
               ],
     "homepage":  "https://github.com/Scorp1o117/dsh-tool-vision",
@@ -54,7 +55,10 @@
                  "url":  "https://github.com/Scorp1o117/dsh-tool-vision/issues"
              },
     "dependencies":  {
-                         "@deepseek-ai/schemastery":  "^3.18.1"
+                         "@deepseek-ai/schemastery":  "^3.18.1",
+                         "potrace":  "^2.1.8",
+                         "puppeteer-core":  "^25.6.0",
+                         "sharp":  ">=0.35.3 <1"
                      },
     "peerDependencies":  {
                              "react":  "^18.2.0",
