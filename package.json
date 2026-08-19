@@ -5,7 +5,7 @@
     "type":  "module",
     "main":  "index.js",
     "scripts":  {
-                    "test":  "node tests/preview-regex.test.mjs && node tests/preview-route.test.mjs"
+                    "test":  "node tests/preview-regex.test.mjs && node tests/preview-route.test.mjs && node tests/auto-image.test.mjs"
                 },
     "exports":  {
                     ".":  "./index.js",

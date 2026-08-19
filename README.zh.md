@@ -56,10 +56,11 @@ DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**
 | `bridgePreview` | `true` | 桥接图片内联预览：用户气泡内显示缩略图，点击放大 |
 | `bridgePreviewScanIntervalMs` | `2000` | 预览兜底扫描间隔（毫秒）；`0` 关闭兜底 |
 | `bridgePreviewHideHint` | `true` | 图片加载成功后隐藏桥接提示文本（失败时保留，安全降级） |
+| `bridgeAutoImage` | `true` | 桥接开启时向宿主准入检查报告**所有**模型都支持图片输入，纯文本模型也能直接粘贴图片，无需手动改 provider 配置 |
 
 ## 图片桥配置
 
-1. 在模型设置里给要贴图的模型声明图片输入（pi-ai 风格），让 harness 放行图片消息：
+1. （一般不需要）只有关闭 `bridgeAutoImage` 时才需要手动给模型声明图片输入（pi-ai 风格），让 harness 放行图片消息：
    ```yaml
    llm-pi-ai:
      providers:

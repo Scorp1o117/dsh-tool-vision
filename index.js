@@ -110,6 +110,17 @@ const Config = z.object({
   bridgePreviewScanIntervalMs: z.number().default(2000),
   /** Hide the bridged hint text once the preview image has loaded (kept on failure — never "no image AND no text"). */
   bridgePreviewHideHint: z.boolean().default(true),
+  /**
+   * Advertise image input capability for every model while the bridge is on.
+   * The host admission gate (host-apiproxy `prompt`/`selectModel`) refuses
+   * pasted images unless the current model declares `image` in its
+   * `inputModalities`. The bridge handles those images anyway (they become
+   * text hints the agent inspects through `inspect_image`), so this wraps the
+   * llm service's `resolveModelInfo` to report image support for text-only
+   * models too — users can paste images on any model without hand-editing
+   * provider model configs.
+   */
+  bridgeAutoImage: z.boolean().default(true),
 });
 
 const MIME_BY_EXT = {
@@ -221,6 +232,51 @@ function parseQuery(rawUrl) {
     }
   }
   return query;
+}
+
+/**
+ * Advertise `image` in the `inputModalities` reported by the llm service for
+ * every model, so the host admission gate lets pasted images through on
+ * text-only models. The bridge turns those images into text hints anyway, so
+ * this is pure admission: it never changes what the adapter actually streams
+ * (the adapter's own stream validation reads the model's real `input` from
+ * the provider config, untouched here).
+ *
+ * The wrap is installed on the shared llm service instance, so it must be
+ * idempotent across HMR re-applies and restored on dispose. `marker` is a
+ * per-instance record proving this plugin already owns the wrap; the
+ * `installed` flag distinguishes "we wrapped it" from "the original was
+ * replaced by something else" so dispose only restores what we replaced.
+ *
+ * Exported for unit testing; the test passes a fake llm service.
+ */
+const LLM_RESOLVE_WRAP_MARK = Symbol("dsh-tool-vision.resolveModelInfo.wrapped");
+function installAutoImageAdmission(llm, logger) {
+  if (llm === undefined || llm === null || typeof llm.resolveModelInfo !== "function") {
+    logger?.warn?.("[tool-vision] llm service unavailable; automatic image admission not installed");
+    return () => {};
+  }
+  if (llm[LLM_RESOLVE_WRAP_MARK]) return () => {}; // already wrapped by us (HMR re-apply)
+  const original = llm.resolveModelInfo.bind(llm);
+  const wrapped = async (provider, model, signal) => {
+    const info = await original(provider, model, signal);
+    if (!info) return info;
+    const mods = info.inputModalities;
+    if (Array.isArray(mods) && mods.includes("image")) return info;
+    return { ...info, inputModalities: [...(mods ?? []), "image"] };
+  };
+  let installed = false;
+  llm[LLM_RESOLVE_WRAP_MARK] = true;
+  llm.resolveModelInfo = wrapped;
+  installed = true;
+  logger?.debug?.("[tool-vision] automatic image admission installed (resolveModelInfo wrapped)");
+  return () => {
+    if (installed) {
+      if (llm.resolveModelInfo === wrapped) llm.resolveModelInfo = original;
+      installed = false;
+    }
+    delete llm[LLM_RESOLVE_WRAP_MARK];
+  };
 }
 
 /**
@@ -512,6 +568,16 @@ function apply(ctx, config) {
     // agent is read from the fused payload.
     attachPreStepBridge(ctx, getConfig, exportDir);
 
+    // ── automatic image admission: let pasted images through on text-only models ──
+    // The host gate refuses images unless the model declares `image` input;
+    // the bridge handles them anyway, so report image support for all models.
+    // The wrap is installed on the shared llm service instance (idempotent,
+    // restored on dispose/HMR).
+    if (getConfig().bridgeAutoImage) {
+      const unwrap = installAutoImageAdmission(ctx.get("llm"), ctx.logger);
+      ctx.effect(() => unwrap, "dsh-tool-vision: automatic image admission");
+    }
+
     // ── bridge image preview: same-origin thumbnails for bridged images ──
     if (getConfig().bridgePreview) {
       registerBridgePreviewRoute(ctx, exportDir, ctx.logger);
@@ -567,6 +633,7 @@ export {
   exportImage,
   hasImageBlock,
   inject,
+  installAutoImageAdmission,
   name,
   parseQuery,
   registerBridgePreviewRoute,

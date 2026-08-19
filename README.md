@@ -79,11 +79,13 @@ Or load it from a local path without npm:
 | `bridgePreview` | `true` | Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). |
 | `bridgePreviewScanIntervalMs` | `2000` | Fallback scan interval for the preview scanner (ms); `0` disables the fallback. |
 | `bridgePreviewHideHint` | `true` | Hide the bridged hint text once the preview image has loaded (kept on failure — safe degradation). |
+| `bridgeAutoImage` | `true` | While the bridge is on, report image input capability for **every** model to the host admission gate, so pasted images are accepted on text-only models without hand-editing provider configs. |
 
 ## Image bridge setup
 
-1. In your model settings, declare image input on the models you paste
-   images onto, so the harness admits image messages (pi-ai style):
+1. (Optional, usually not needed) If `bridgeAutoImage` is disabled, declare
+   image input on the models you paste images onto, so the harness admits
+   image messages (pi-ai style):
    ```yaml
    llm-pi-ai:
      providers:
