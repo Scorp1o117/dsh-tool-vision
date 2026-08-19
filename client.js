@@ -323,6 +323,9 @@ window.__ModuleLoader__.load({
     var PREVIEW_ATTR = "data-tv-preview";
     var PREVIEW_ROUTE = "/plugins/dsh-tool-vision/image";
     var PREVIEW_PATH_RE = /exported to:\s*("[^"]+"|'[^']+'|[A-Za-z]:[\\/][^\s\]]+?\.(?:png|jpe?g|webp|gif|avif|bmp))/gi;
+    // 完整桥接提示段(从 \u200b[bridge] 到 see its content.]),用于精准剔除桥接文本、
+    // 保留用户自己的文字(dsh 会把用户消息的多段文本合并渲染到同一容器)。
+    var PREVIEW_TEXT_RE = /\u200b\[bridge\]\[User sent an image[\s\S]*?see its content\.\]/g;
 
     function previewConfigOf(scope) {
       var cfg = { enabled: true, intervalMs: 2000, hideHint: true };
@@ -398,8 +401,15 @@ window.__ModuleLoader__.load({
         img.style.cssText = "display:block;margin-left:auto;margin-right:0;max-width:min(360px,100%);max-height:420px;border-radius:8px;margin-top:4px;margin-bottom:6px;object-fit:contain;cursor:zoom-in;";
         img.addEventListener("click", function () { openLightbox(img.src, img.alt); });
         img.addEventListener("load", function () {
-          // P2:图片加载成功后隐藏桥接文本;失败时保留(安全降级)
-          if (cfg.hideHint && block.parentElement) block.style.display = "none";
+          // P2:图片加载成功后隐藏桥接提示文本;失败时保留(安全降级)。
+          // 不能直接隐藏整块:dsh 把用户消息的多段文本 join 后渲染到同一容器,
+          // 隐藏整块会把用户自己打的字(如"测试")一起藏掉。这里先精准剔除
+          // 桥接文本段,仅当容器已无其他内容时才隐藏整个容器。
+          if (cfg.hideHint) {
+            var cleaned = node.data ? node.data.replace(PREVIEW_TEXT_RE, "") : "";
+            if (cleaned !== node.data) node.data = cleaned;
+            if ((block.textContent || "").replace(/\s/g, "") === "") block.style.display = "none";
+          }
         });
         img.addEventListener("error", function () {
           img.remove(); // 静默降级;块标记保留,避免无限重试
