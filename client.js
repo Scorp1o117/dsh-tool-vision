@@ -6,6 +6,15 @@
  * options) through the settings scope transport. Changes hot-apply via the
  * host settings provider — no restart needed.
  *
+ * Bridge image preview (v0.4.0, contributed by xing666173 from
+ * dsh-bridge-preview, MIT © 2026 xing666173): scans user bubbles for bridge
+ * hint text blocks stamped with the invisible `BRIDGE_MARKER` (`\u200b[bridge]`)
+ * and renders an inline thumbnail (click to zoom, lightbox). Pure display
+ * layer — persisted messages, the transcript and the model-facing text are
+ * untouched. Robustness: per-block dedup, MutationObserver + configurable
+ * fallback interval, silent degradation on load failure, and optional
+ * hint-text hiding once the image has loaded (P2).
+ *
  * Hand-written ModuleLoader bundle — no build step required.
  */
 window.__ModuleLoader__.load({
@@ -66,6 +75,12 @@ window.__ModuleLoader__.load({
       fieldBridgeTextOnly: "图片桥接开关",
       fieldBridgeExportDir: "桥接导出目录",
       fieldMultimodalModels: "多模态白名单（逗号分隔）",
+      fieldBridgePreview: "桥接图片内联预览（气泡内缩略图，点击放大）",
+      fieldBridgePreviewScanIntervalMs: "预览兜底扫描间隔（毫秒，0 = 关闭兜底）",
+      fieldBridgePreviewHideHint: "图片加载成功后隐藏桥接提示文本",
+      hintBridgePreview: "纯展示层：不影响模型侧文本与 inspect_image 调用。",
+      hintBridgePreviewScanIntervalMs: "默认 2000ms；越小响应越快，越大越省资源。",
+      hintBridgePreviewHideHint: "加载失败时保留文本（安全降级，绝不出现既无图又无字）。",
       save: "保存",
       reset: "恢复默认",
       saved: "已保存",
@@ -95,6 +110,12 @@ window.__ModuleLoader__.load({
       fieldBridgeTextOnly: "Image bridge",
       fieldBridgeExportDir: "Bridge export dir",
       fieldMultimodalModels: "Multimodal whitelist (comma-separated)",
+      fieldBridgePreview: "Bridge image preview (inline thumbnail in the bubble, click to zoom)",
+      fieldBridgePreviewScanIntervalMs: "Preview fallback scan interval (ms, 0 = disable)",
+      fieldBridgePreviewHideHint: "Hide the bridged hint text once the image has loaded",
+      hintBridgePreview: "Pure display layer: the model-facing text and the inspect_image chain are untouched.",
+      hintBridgePreviewScanIntervalMs: "Default 2000ms; lower is snappier, higher is cheaper.",
+      hintBridgePreviewHideHint: "Text is kept on load failure (safe degradation, never no image AND no text).",
       save: "Save",
       reset: "Reset",
       saved: "Saved",
@@ -116,7 +137,10 @@ window.__ModuleLoader__.load({
       { key: "maxImageBytes", label: "fieldMaxImageBytes", type: "number" },
       { key: "bridgeTextOnly", label: "fieldBridgeTextOnly", type: "checkbox" },
       { key: "bridgeExportDir", label: "fieldBridgeExportDir", type: "text" },
-      { key: "multimodalModels", label: "fieldMultimodalModels", type: "csv" }
+      { key: "multimodalModels", label: "fieldMultimodalModels", type: "csv" },
+      { key: "bridgePreview", label: "fieldBridgePreview", type: "checkbox" },
+      { key: "bridgePreviewScanIntervalMs", label: "fieldBridgePreviewScanIntervalMs", type: "number" },
+      { key: "bridgePreviewHideHint", label: "fieldBridgePreviewHideHint", type: "checkbox" }
     ];
     var ZH_HINTS = {
       apiKey: "apiKeyHint",
@@ -125,7 +149,10 @@ window.__ModuleLoader__.load({
       maxImageBytes: "maxImageBytes",
       bridgeTextOnly: "bridgeTextOnly",
       bridgeExportDir: "bridgeExportDir",
-      multimodalModels: "multimodalModels"
+      multimodalModels: "multimodalModels",
+      bridgePreview: "hintBridgePreview",
+      bridgePreviewScanIntervalMs: "hintBridgePreviewScanIntervalMs",
+      bridgePreviewHideHint: "hintBridgePreviewHideHint"
     };
 
     function labelOf(f, t) {
@@ -291,11 +318,160 @@ window.__ModuleLoader__.load({
       return Array.isArray(arr) ? arr.join(", ") : String(arr ?? "");
     }
 
+    // ── bridge image preview (v0.4.0, xing666173 / dsh-bridge-preview) ────
+    var PREVIEW_MARK = "\u200b[bridge]";
+    var PREVIEW_ATTR = "data-tv-preview";
+    var PREVIEW_ROUTE = "/plugins/dsh-tool-vision/image";
+    var PREVIEW_PATH_RE = /exported to:\s*("[^"]+"|'[^']+'|[A-Za-z]:[\\/][^\s\]]+?\.(?:png|jpe?g|webp|gif|avif|bmp))/gi;
+    // 完整桥接提示段(从 \u200b[bridge] 到 see its content.]),用于精准剔除桥接文本、
+    // 保留用户自己的文字(dsh 会把用户消息的多段文本合并渲染到同一容器)。
+    var PREVIEW_TEXT_RE = /\u200b\[bridge\]\[User sent an image[\s\S]*?see its content\.\]/g;
+
+    function previewConfigOf(scope) {
+      var cfg = { enabled: true, intervalMs: 2000, hideHint: true };
+      try {
+        var snap = scope.getSnapshot();
+        if (snap.status === "ready" && snap.value) {
+          cfg.enabled = snap.value.bridgePreview !== false;
+          var iv = Number(snap.value.bridgePreviewScanIntervalMs);
+          cfg.intervalMs = Number.isFinite(iv) && iv > 0 ? iv : 0;
+          cfg.hideHint = snap.value.bridgePreviewHideHint !== false;
+        }
+      } catch (e) { /* keep defaults */ }
+      return cfg;
+    }
+
+    function previewPathOf(data) {
+      var m;
+      PREVIEW_PATH_RE.lastIndex = 0;
+      while ((m = PREVIEW_PATH_RE.exec(data)) !== null) {
+        var s = m[1];
+        if (s.length >= 2) {
+          var first = s[0];
+          var last = s[s.length - 1];
+          if ((first === '"' && last === '"') || (first === "'" && last === "'")) s = s.slice(1, -1);
+        }
+        return s;
+      }
+      return null;
+    }
+
+    function openLightbox(src, alt) {
+      var overlay = document.createElement("div");
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.82);display:flex;align-items:center;justify-content:center;z-index:2147483000;cursor:zoom-out;";
+      var big = document.createElement("img");
+      big.src = src;
+      big.alt = alt || "图片预览";
+      big.style.cssText = "max-width:92vw;max-height:92vh;object-fit:contain;border-radius:4px;box-shadow:0 8px 40px rgba(0,0,0,0.5);";
+      var close = function () {
+        overlay.remove();
+        document.removeEventListener("keydown", onKey, true);
+      };
+      var onKey = function (e) {
+        if (e.key === "Escape") close();
+      };
+      big.addEventListener("error", close);
+      overlay.addEventListener("click", close);
+      overlay.appendChild(big);
+      document.body.appendChild(overlay);
+      document.addEventListener("keydown", onKey, true);
+    }
+
+    function attachBridgePreview(ctx, scope) {
+      var cfg = previewConfigOf(scope);
+      var pendingTimer = null;
+      var intervalTimer = null;
+      var observer = null;
+
+      function processTextNode(node) {
+        var data = node.data;
+        if (typeof data !== "string" || data.indexOf(PREVIEW_MARK) === -1) return;
+        var block = node.parentElement;
+        if (!block || block.hasAttribute(PREVIEW_ATTR)) return;
+        var path = previewPathOf(data);
+        if (!path) return;
+        // 只插到消息行内的文本容器;绝不插进列表/body(拖图消息形态的防御)
+        var container = block.parentElement;
+        if (!container || container === document.body || container.childElementCount > 3) return;
+        block.setAttribute(PREVIEW_ATTR, "1");
+        var img = document.createElement("img");
+        img.setAttribute(PREVIEW_ATTR, "1");
+        img.src = PREVIEW_ROUTE + "?p=" + encodeURIComponent(path);
+        img.alt = "图片预览";
+        img.style.cssText = "display:block;margin-left:auto;margin-right:0;max-width:min(360px,100%);max-height:420px;border-radius:8px;margin-top:4px;margin-bottom:6px;object-fit:contain;cursor:zoom-in;";
+        img.addEventListener("click", function () { openLightbox(img.src, img.alt); });
+        img.addEventListener("load", function () {
+          // P2:图片加载成功后隐藏桥接提示文本;失败时保留(安全降级)。
+          // 不能直接隐藏整块:dsh 把用户消息的多段文本 join 后渲染到同一容器,
+          // 隐藏整块会把用户自己打的字(如"测试")一起藏掉。这里先精准剔除
+          // 桥接文本段,仅当容器已无其他内容时才隐藏整个容器。
+          if (cfg.hideHint) {
+            var cleaned = node.data ? node.data.replace(PREVIEW_TEXT_RE, "") : "";
+            if (cleaned !== node.data) node.data = cleaned;
+            if ((block.textContent || "").replace(/\s/g, "") === "") block.style.display = "none";
+          }
+        });
+        img.addEventListener("error", function () {
+          img.remove(); // 静默降级;块标记保留,避免无限重试
+        });
+        container.insertBefore(img, block);
+      }
+
+      function scan() {
+        if (!cfg.enabled) return;
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+          acceptNode: function (node) {
+            if (!node.data || node.data.indexOf(PREVIEW_MARK) === -1) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          }
+        });
+        var nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        for (var i = 0; i < nodes.length; i++) processTextNode(nodes[i]);
+      }
+
+      function armInterval() {
+        if (intervalTimer !== null) { clearInterval(intervalTimer); intervalTimer = null; }
+        if (cfg.intervalMs > 0) intervalTimer = setInterval(scan, cfg.intervalMs);
+      }
+
+      ctx.effect(function () {
+        scan();
+        observer = new MutationObserver(function (records) {
+          // 忽略本插件自己插入的图片节点,避免自我触发
+          for (var i = 0; i < records.length; i++) {
+            var t = records[i].target;
+            if (t && t.nodeType === 1 && t.hasAttribute && t.hasAttribute(PREVIEW_ATTR)) continue;
+            if (pendingTimer !== null) return;
+            pendingTimer = setTimeout(function () {
+              pendingTimer = null;
+              scan();
+            }, 300);
+            break;
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+        armInterval();
+        var un = typeof scope.subscribe === "function" ? scope.subscribe(function () {
+          cfg = previewConfigOf(scope);
+          armInterval();
+        }) : null;
+        return function () {
+          if (observer) observer.disconnect();
+          if (pendingTimer !== null) { clearTimeout(pendingTimer); pendingTimer = null; }
+          if (intervalTimer !== null) { clearInterval(intervalTimer); intervalTimer = null; }
+          if (un) un();
+        };
+      }, "dsh-tool-vision: bridge preview scanner");
+    }
+
     // ── plugin ────────────────────────────────────────────────────────────
     function apply(ctx) {
       var t = ctx.locale.bind(NS);
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "dsh-tool-vision: dictionaries");
       var scope = ctx.settingsScope.bind({ namespace: "tool-vision" });
+      scope.load();
+      attachBridgePreview(ctx, scope);
       ctx.slots.inject("settings.section", function () {
         return ctx.slots.register({
           name: "settings.section",

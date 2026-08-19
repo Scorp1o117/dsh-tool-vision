@@ -22,9 +22,22 @@
  *    the agent hands to `inspect_image`. Models listed in
  *    `multimodalModels` (or whose resolved `inputModalities` include
  *    "image") receive image blocks directly and are never bridged.
+ *
+ * 3. Bridge image preview (v0.4.0, contributed by xing666173 from
+ *    dsh-bridge-preview, MIT © 2026 xing666173) — the browser half renders
+ *    inline thumbnails for bridged pasted images:
+ *
+ *    - `bridgeMessages` stamps every bridged hint with an invisible marker
+ *      (`BRIDGE_MARKER`), so the client can identify bridge text blocks
+ *      precisely instead of pattern-matching free text.
+ *    - A loopback route (`/plugins/dsh-tool-vision/image`) serves the
+ *      exported images to the same-origin page; the client inserts a
+ *      thumbnail above the hint text and opens a lightbox on click.
+ *    - Pure display layer: persisted messages, the transcript, the
+ *      model-facing text and the `inspect_image` chain are untouched.
  */
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { extname, isAbsolute, join, resolve as resolvePath } from "node:path";
+import { extname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import os from "node:os";
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
@@ -33,10 +46,32 @@ import { ensureSettingsNamespaceExposed } from "./vendor/dsh-settings-expose.js"
 
 /** Cordis plugin name. */
 const name = "tool-vision";
-/** The tool registry, the llm seam (model capability lookup), and the attachment store. */
-const inject = ["tools", "llm", "attachments"];
+/** The tool registry, the llm seam (model capability lookup), the attachment store, and the host web server. */
+const inject = ["tools", "llm", "attachments", "webServer"];
 /** Settings namespace owned by this plugin (Web UI settings section). */
 const NS = settingsNamespace("tool-vision");
+
+/**
+ * Invisible prefix stamped onto every bridged hint text block. The browser
+ * half uses it to recognize bridge text precisely (no free-text regex over
+ * user messages), and the model-facing hint stays intact otherwise.
+ */
+const BRIDGE_MARKER = "\u200b[bridge]";
+
+/** Loopback route serving bridged images to the same-origin page. */
+const BRIDGE_PREVIEW_ROUTE = "/plugins/dsh-tool-vision/image";
+/** Hard cap for a single served image (defense in depth; export is bounded). */
+const BRIDGE_PREVIEW_MAX_BYTES = 20 * 1024 * 1024;
+/** Extensions the preview route serves (svg/ico intentionally excluded). */
+const BRIDGE_PREVIEW_MEDIA = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+};
 
 const DEFAULT_DESCRIPTION =
   "Analyze an image using an external vision-capable model through an OpenAI-compatible API. " +
@@ -69,6 +104,12 @@ const Config = z.object({
   bridgeExportDir: z.string().default(""),
   /** Model ids that receive image blocks directly (never bridged). */
   multimodalModels: z.array(z.string()).default([]),
+  /** Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). */
+  bridgePreview: z.boolean().default(true),
+  /** Fallback scan interval for the preview scanner in ms; 0 disables the periodic fallback. */
+  bridgePreviewScanIntervalMs: z.number().default(2000),
+  /** Hide the bridged hint text once the preview image has loaded (kept on failure — never "no image AND no text"). */
+  bridgePreviewHideHint: z.boolean().default(true),
 });
 
 const MIME_BY_EXT = {
@@ -133,6 +174,8 @@ async function exportImage(attachment, ctx, dir) {
  * Replace image content blocks with text hints pointing at exported files.
  * Non-image messages are returned as-is (same reference); bridged messages
  * are fresh, deep-frozen objects with the original identity and source.
+ * Each bridged hint is stamped with the invisible {@link BRIDGE_MARKER}
+ * prefix so the browser half can recognize it precisely.
  * Exported for unit testing; `ctx` only needs `attachments`.
  */
 async function bridgeMessages(messages, ctx, dir) {
@@ -154,13 +197,101 @@ async function bridgeMessages(messages, ctx, dir) {
       blocks.push({
         type: "text",
         text:
-          `[User sent an image${name}, exported to: ${path}. ` +
+          `${BRIDGE_MARKER}[User sent an image${name}, exported to: ${path}. ` +
           `Inspect it with the inspect_image tool to see its content.]`,
       });
     }
     next.push(deepFreeze({ ...message, content: blocks }));
   }
   return next;
+}
+
+/** Parse `?a=b&c=d` from a raw request URL (percent-decoded). */
+function parseQuery(rawUrl) {
+  const query = {};
+  const at = rawUrl.indexOf("?");
+  if (at === -1) return query;
+  for (const pair of rawUrl.slice(at + 1).split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq === -1) continue;
+    try {
+      query[pair.slice(0, eq)] = decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, " "));
+    } catch {
+      /* skip malformed pairs */
+    }
+  }
+  return query;
+}
+
+/**
+ * Register the loopback route that serves bridged images to the same-origin
+ * page (the preview thumbnails). Read-only and tightly scoped:
+ *  - only files inside the bridge export directory (no traversal);
+ *  - only image extensions from {@link BRIDGE_PREVIEW_MEDIA};
+ *  - Host restricted to the local machine;
+ *  - hard 20MB cap per file.
+ */
+function registerBridgePreviewRoute(ctx, exportDir, logger) {
+  const webServer = ctx.get("webServer");
+  if (webServer === undefined) {
+    logger?.warn?.("[tool-vision] webServer unavailable; bridge preview route not registered");
+    return;
+  }
+  const bridgeDir = resolvePath(exportDir);
+  ctx.effect(() => webServer.register({
+    kind: "exact",
+    path: BRIDGE_PREVIEW_ROUTE,
+    async handler(req, res) {
+      try {
+        const raw = String(req.url ?? "");
+        const query = parseQuery(raw);
+        const p = query.p;
+        if (typeof p !== "string" || p.length === 0) {
+          res.writeHead(400);
+          res.end("bad request");
+          return;
+        }
+        const lower = p.toLowerCase();
+        const mediaType = BRIDGE_PREVIEW_MEDIA[extname(lower)];
+        if (mediaType === undefined) {
+          res.writeHead(400);
+          res.end("not an image path");
+          return;
+        }
+        const host = String(req.headers?.host ?? "");
+        if (host !== "" && !/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host)) {
+          res.writeHead(403);
+          res.end("forbidden");
+          return;
+        }
+        const target = resolvePath(p);
+        if (target !== bridgeDir && !target.startsWith(bridgeDir + sep)) {
+          res.writeHead(403);
+          res.end("forbidden");
+          return;
+        }
+        const info = await stat(target);
+        if (!info.isFile() || info.size > BRIDGE_PREVIEW_MAX_BYTES) {
+          res.writeHead(404);
+          res.end("not found");
+          return;
+        }
+        const bytes = await readFile(target);
+        res.writeHead(200, {
+          "Content-Type": mediaType,
+          "Cache-Control": "private, max-age=60",
+        });
+        res.end(bytes);
+      } catch {
+        try {
+          res.writeHead(404);
+          res.end("not found");
+        } catch {
+          /* response already sent */
+        }
+      }
+    },
+  }), "dsh-tool-vision: bridge preview route");
 }
 
 /**
@@ -380,6 +511,11 @@ function apply(ctx, config) {
     // so one registration serves every agent (new and resumed alike) and the
     // agent is read from the fused payload.
     attachPreStepBridge(ctx, getConfig, exportDir);
+
+    // ── bridge image preview: same-origin thumbnails for bridged images ──
+    if (getConfig().bridgePreview) {
+      registerBridgePreviewRoute(ctx, exportDir, ctx.logger);
+    }
   }
 
   ctx.tools.register(defineTool({
@@ -416,6 +552,10 @@ function apply(ctx, config) {
 }
 
 export {
+  BRIDGE_MARKER,
+  BRIDGE_PREVIEW_MAX_BYTES,
+  BRIDGE_PREVIEW_MEDIA,
+  BRIDGE_PREVIEW_ROUTE,
   Config,
   DEFAULT_DESCRIPTION,
   EXT_BY_MEDIA,
@@ -428,5 +568,7 @@ export {
   hasImageBlock,
   inject,
   name,
+  parseQuery,
+  registerBridgePreviewRoute,
   repairLoggedImages,
 };
