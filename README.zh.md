@@ -53,6 +53,9 @@ DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**
 | `bridgeTextOnly` | `true` | 把粘贴图片转成文本指引（发给看不懂图片的模型时） |
 | `bridgeExportDir` | 临时目录 | 桥接图片导出目录（`os.tmpdir()/dsh-vision-bridge`） |
 | `multimodalModels` | `[]` | 直发图片块的模型 id（如 `mimo-v2.5`） |
+| `bridgePreview` | `true` | 桥接图片内联预览：用户气泡内显示缩略图，点击放大 |
+| `bridgePreviewScanIntervalMs` | `2000` | 预览兜底扫描间隔（毫秒）；`0` 关闭兜底 |
+| `bridgePreviewHideHint` | `true` | 图片加载成功后隐藏桥接提示文本（失败时保留，安全降级） |
 
 ## 图片桥配置
 
@@ -80,6 +83,18 @@ DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**
 > 为什么不用 `llm/stream`？harness 会冻结每个请求，且 agent-loop invariant 会拒绝任何与会话日志推导不一致的请求；这个 cordis 版本的 waterfall `next()` 也无法替换请求参数。`agent/pre-step` 才是受支持的缝：它的决策消息**会成为**持久化日志，invariant 天然成立。
 
 密钥解析顺序：`config.apiKey` → `process.env[apiKeyEnv]` → `process.env.OPENAI_API_KEY`。
+
+## 桥接图片预览（v0.4.0）
+
+纯文本模型下，被桥接的图片在对话里只显示一段 `[User sent an image...]` 文本指引。开启 `bridgePreview`（默认开）后，浏览器端会在**展示层**把指引渲染成气泡内缩略图：
+
+- **缩略图 + 灯箱**：点击缩略图全屏放大，点击任意处或按 `Esc` 关闭；
+- **即时 + 兜底**：新消息由 MutationObserver 即时处理，历史消息由周期兜底扫描补齐（间隔见 `bridgePreviewScanIntervalMs`）；
+- **隐藏提示文本（P2）**：`bridgePreviewHideHint` 开启时，图片加载成功后桥接文本自动隐藏，气泡只留图片；加载失败则保留文本（安全降级，绝不出现"既无图又无字"）；
+- **识别机制**：桥接文本带不可见前缀标记（`\u200b[bridge]`），客户端据此精确识别桥接块——用户正常发言中出现"exported to:"字样不会被误伤；
+- **纯展示层红线**：不修改持久化消息、不修改转录、不修改模型侧文本、不碰 `inspect_image` 调用链。
+
+预览图片由同源回环路由 `/plugins/dsh-tool-vision/image` 提供，只读桥接导出目录、仅本机 Host、仅图片扩展名、单文件 ≤ 20MB、防目录穿越。
 
 ## 工具：`inspect_image`
 

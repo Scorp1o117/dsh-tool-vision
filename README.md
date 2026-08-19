@@ -76,6 +76,9 @@ Or load it from a local path without npm:
 | `bridgeTextOnly` | `true` | Bridge pasted images to text hints on models that cannot see images. |
 | `bridgeExportDir` | temp | Export dir for bridged images (`os.tmpdir()/dsh-vision-bridge`). |
 | `multimodalModels` | `[]` | Model ids that receive image blocks directly (e.g. `mimo-v2.5`). |
+| `bridgePreview` | `true` | Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). |
+| `bridgePreviewScanIntervalMs` | `2000` | Fallback scan interval for the preview scanner (ms); `0` disables the fallback. |
+| `bridgePreviewHideHint` | `true` | Hide the bridged hint text once the preview image has loaded (kept on failure — safe degradation). |
 
 ## Image bridge setup
 
@@ -112,6 +115,31 @@ message), and the agent inspects it through the configured vision endpoint.
 
 Key resolution order: `config.apiKey` → `process.env[apiKeyEnv]` →
 `process.env.OPENAI_API_KEY`.
+
+## Bridge image preview (v0.4.0)
+
+On text-only models, pasted images become `[User sent an image...]` hint
+text in the transcript. With `bridgePreview` enabled (default), the browser
+half renders those hints as inline thumbnails **in the display layer only**:
+
+- **Thumbnail + lightbox**: click to zoom full-screen; click anywhere or
+  press `Esc` to close;
+- **Immediate + fallback**: new messages are handled by a MutationObserver;
+  history is back-filled by a periodic scan (interval via
+  `bridgePreviewScanIntervalMs`);
+- **Hide the hint (P2)**: with `bridgePreviewHideHint` on, the hint text is
+  hidden once the image has loaded, leaving just the image; on load failure
+  the text stays (safe degradation — never "no image AND no text");
+- **Precise identification**: bridged hints carry an invisible prefix marker
+  (`\u200b[bridge]`), so ordinary user text that happens to contain
+  "exported to:" is never misidentified;
+- **Display-layer red line**: persisted messages, the transcript, the
+  model-facing text and the `inspect_image` chain are untouched.
+
+Preview images are served by the same-origin loopback route
+`/plugins/dsh-tool-vision/image`: read-only access to the bridge export
+directory, localhost-only Host, image extensions only, ≤ 20MB per file,
+path-traversal protected.
 
 ## Tool: `inspect_image`
 
