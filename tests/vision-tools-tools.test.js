@@ -69,6 +69,7 @@ function mockEnv(tmpDir) {
     maxTokens: 4096,
     timeoutMs: 60000,
     maxImageBytes: 10 * 1024 * 1024,
+    desktopScreenshot: true,
   })
   const exec = { agent: { session: { header: { cwd: tmpDir } } }, signal: undefined }
   return { ctx, registered, attachments, exec, getConfig }
@@ -80,7 +81,7 @@ function toolByName(registered, name) {
   return def
 }
 
-test('registerVisionTools registers exactly the 14 vision tools', async () => {
+test('registerVisionTools registers exactly the 14 vision tools when desktopScreenshot is on', async () => {
   const { ctx, registered, getConfig } = mockEnv(await mkdtemp(join(tmpdir(), 'vh-tools-')))
   registerVisionTools(ctx, getConfig)
   const names = registered.map((d) => d.name)
@@ -88,6 +89,17 @@ test('registerVisionTools registers exactly the 14 vision tools', async () => {
     assert.ok(names.includes(expected), `missing ${expected}`)
   }
   assert.equal(registered.length, 14)
+})
+
+test('vision_screenshot is privacy-gated and absent by default', async () => {
+  const { ctx, registered, getConfig } = mockEnv(await mkdtemp(join(tmpdir(), 'vh-tools-')))
+  const base = getConfig
+  const gatedConfig = () => ({ ...base(), desktopScreenshot: false })
+  registerVisionTools(ctx, gatedConfig)
+  const names = registered.map((d) => d.name)
+  assert.equal(registered.length, 13)
+  assert.ok(!names.includes('vision_screenshot'), 'screenshot must be absent when desktopScreenshot is off')
+  assert.ok(names.includes('vision_describe'))
 })
 
 test('every tool declares a JSON-schema parameter contract with required fields', async () => {

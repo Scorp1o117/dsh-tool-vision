@@ -111,6 +111,8 @@ const Config = z.object({
   bridgePreviewScanIntervalMs: z.number().default(2000),
   /** Hide the bridged hint text once the preview image has loaded (kept on failure — never "no image AND no text"). */
   bridgePreviewHideHint: z.boolean().default(true),
+  /** Privacy gate for vision_screenshot: desktop capture is only registered when explicitly enabled. */
+  desktopScreenshot: z.boolean().default(false),
   /**
    * Advertise image input capability for every model while the bridge is on.
    * The host admission gate (host-apiproxy `prompt`/`selectModel`) refuses

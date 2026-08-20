@@ -190,7 +190,7 @@ no extra settings:
 | `vision_trace` | Potrace vectorization into colored SVG (worker-thread, safe) |
 | `vision_extract_foreground` | Solid-background removal → transparent PNG |
 | `vision_html_screenshot` | Headless render of a local .html (network blocked) |
-| `vision_screenshot` | Desktop capture (Win: PowerShell; macOS: screencapture; Linux: import/scrot) |
+| `vision_screenshot` | Desktop capture (privacy-gated: enable `desktopScreenshot` in settings; Win: PowerShell / macOS: screencapture / Linux: import/scrot) |
 | `vision_present` | Publish a generated image to the user via the host attachment store |
 | `vision_materialize` | Copy an attachment/local image into the workspace as a real path |
 
@@ -209,8 +209,13 @@ Quality & safety details:
 - **Path containment** for relative inputs; artifacts land in
   `<workspace>/.dsh-tool-vision/`.
 
-Requires `sharp` / `potrace` / `puppeteer-core` (declared in dependencies;
-missing ones degrade lazily with an install hint and never break other tools).
+Requires `sharp` / `potrace` / `puppeteer-core` (declared as optional
+dependencies: a failed platform install never blocks the plugin; missing ones
+degrade lazily with an install hint and never break other tools).
+
+`vision_screenshot` is privacy-sensitive and therefore **not registered by
+default** — set `desktopScreenshot: true` in the tool-vision settings to
+enable desktop capture.
 
 ## Limitations
 
