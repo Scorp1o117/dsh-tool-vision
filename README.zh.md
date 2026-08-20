@@ -131,7 +131,7 @@ DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**
 | `vision_trace` | potrace 矢量化输出彩色 SVG(worker 线程,安全) |
 | `vision_extract_foreground` | 纯色背景抠图 → 透明 PNG |
 | `vision_html_screenshot` | 本地 HTML 无头渲染截图(禁网) |
-| `vision_screenshot` | 桌面截屏(Win: PowerShell;macOS: screencapture;Linux: import/scrot) |
+| `vision_screenshot` | 桌面截屏(隐私门控:需在设置中开启 `desktopScreenshot`;Win: PowerShell / macOS: screencapture / Linux: import/scrot) |
 | `vision_present` | 通过宿主附件库把生成的图片正式展示给用户 |
 | `vision_materialize` | 把附件/本地图片落盘为工作区真实路径 |
 
@@ -147,8 +147,11 @@ DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**
 - **路径 containment**(相对输入禁止逃逸工作区);产物写入
   `<工作区>/.dsh-tool-vision/`。
 
-依赖 `sharp` / `potrace` / `puppeteer-core`(已声明;缺失时懒加载降级并
-给出安装提示,不影响其他工具)。
+依赖 `sharp` / `potrace` / `puppeteer-core`(声明为**可选依赖**:平台安装失败
+不会阻断插件安装;缺失时懒加载降级并给出安装提示,不影响其他工具)。
+
+`vision_screenshot` 属于隐私敏感能力,**默认不注册**——在 tool-vision 设置中
+开启 `desktopScreenshot: true` 后才会注册桌面截屏工具。
 
 ## 限制
 
