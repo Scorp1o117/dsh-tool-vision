@@ -79,10 +79,12 @@ window.__ModuleLoader__.load({
       fieldBridgePreviewScanIntervalMs: "预览兜底扫描间隔（毫秒，0 = 关闭兜底）",
       fieldBridgePreviewHideHint: "图片加载成功后隐藏桥接提示文本",
       fieldBridgeAutoImage: "自动声明图片能力（纯文本模型也能粘贴图片）",
+      fieldDesktopScreenshot: "桌面截屏工具（vision_screenshot，默认关闭）",
       hintBridgePreview: "纯展示层：不影响模型侧文本与 inspect_image 调用。",
       hintBridgePreviewScanIntervalMs: "默认 2000ms；越小响应越快，越大越省资源。",
       hintBridgePreviewHideHint: "加载失败时保留文本（安全降级，绝不出现既无图又无字）。",
       hintBridgeAutoImage: "桥接开启时向宿主报告所有模型支持图片，绕过“模型不支持图片”的发送拦截；实际仍走桥接转文本。",
+      hintDesktopScreenshot: "隐私敏感能力：仅在开启后注册 vision_screenshot 桌面截屏工具，模型才可截取用户屏幕。",
       save: "保存",
       reset: "恢复默认",
       saved: "已保存",
@@ -116,10 +118,12 @@ window.__ModuleLoader__.load({
       fieldBridgePreviewScanIntervalMs: "Preview fallback scan interval (ms, 0 = disable)",
       fieldBridgePreviewHideHint: "Hide the bridged hint text once the image has loaded",
       fieldBridgeAutoImage: "Auto-declare image capability (paste images on text-only models)",
+      fieldDesktopScreenshot: "Desktop screenshot tool (vision_screenshot, off by default)",
       hintBridgePreview: "Pure display layer: the model-facing text and the inspect_image chain are untouched.",
       hintBridgePreviewScanIntervalMs: "Default 2000ms; lower is snappier, higher is cheaper.",
       hintBridgePreviewHideHint: "Text is kept on load failure (safe degradation, never no image AND no text).",
       hintBridgeAutoImage: "While the bridge is on, report image support for every model to bypass the host image-send gate; images still travel as bridged text hints.",
+      hintDesktopScreenshot: "Privacy-sensitive: the vision_screenshot desktop-capture tool is only registered (and visible to the model) when enabled.",
       save: "Save",
       reset: "Reset",
       saved: "Saved",
@@ -145,7 +149,8 @@ window.__ModuleLoader__.load({
       { key: "bridgePreview", label: "fieldBridgePreview", type: "checkbox" },
       { key: "bridgePreviewScanIntervalMs", label: "fieldBridgePreviewScanIntervalMs", type: "number" },
       { key: "bridgePreviewHideHint", label: "fieldBridgePreviewHideHint", type: "checkbox" },
-      { key: "bridgeAutoImage", label: "fieldBridgeAutoImage", type: "checkbox" }
+      { key: "bridgeAutoImage", label: "fieldBridgeAutoImage", type: "checkbox" },
+      { key: "desktopScreenshot", label: "fieldDesktopScreenshot", type: "checkbox" }
     ];
     var ZH_HINTS = {
       apiKey: "apiKeyHint",
@@ -158,7 +163,8 @@ window.__ModuleLoader__.load({
       bridgePreview: "hintBridgePreview",
       bridgePreviewScanIntervalMs: "hintBridgePreviewScanIntervalMs",
       bridgePreviewHideHint: "hintBridgePreviewHideHint",
-      bridgeAutoImage: "hintBridgeAutoImage"
+      bridgeAutoImage: "hintBridgeAutoImage",
+      desktopScreenshot: "hintDesktopScreenshot"
     };
 
     function labelOf(f, t) {

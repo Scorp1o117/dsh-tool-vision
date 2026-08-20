@@ -171,6 +171,51 @@ Example endpoints (`baseURL`):
 > - Settings changes hot-apply (no restart needed).
 > - Tested against DSH `0.1.0-rc.6`.
 
+## Pixel-level vision tools (v0.6.0, ported from dsh-vision-router)
+
+14 `vision_*` tools driven by the **same** configured endpoint as
+`inspect_image` (baseURL/apiKey/model) — no provider chain, no local models,
+no extra settings:
+
+| Tool | Purpose |
+|---|---|
+| `vision_describe` | Image Q&A / multi-image comparison (optional structured JSON) |
+| `vision_ground` | Locate a target and return its ORIGINAL-pixel bounding box |
+| `vision_detect` | Enumerate elements (buttons, inputs, icons…) with numbered boxes |
+| `vision_crop` | Crop a pixel region to a PNG artifact |
+| `vision_pixel_diff` | Per-pixel comparison: ratio, worst regions, heatmap, report |
+| `vision_colors` | Dominant-color quantization for palette matching |
+| `vision_ocr` | Verbatim text transcription (letters only — not scene analysis) |
+| `vision_long_screenshot_ocr` | Chunked long-screenshot transcription into Markdown |
+| `vision_trace` | Potrace vectorization into colored SVG (worker-thread, safe) |
+| `vision_extract_foreground` | Solid-background removal → transparent PNG |
+| `vision_html_screenshot` | Headless render of a local .html (network blocked) |
+| `vision_screenshot` | Desktop capture (privacy-gated: enable `desktopScreenshot` in settings; Win: PowerShell / macOS: screencapture / Linux: import/scrot) |
+| `vision_present` | Publish a generated image to the user via the host attachment store |
+| `vision_materialize` | Copy an attachment/local image into the workspace as a real path |
+
+Quality & safety details:
+
+- **Content-hash cache** keyed by endpoint+model+image+question (no stale
+  answers across model switches, failures are never cached).
+- **Uniform 4MP downscale** before every model call; oversized inputs are
+  rejected with a clear error (stat pre-check, 20MB cap on both file and
+  attachment paths).
+- **Rate-limit / 5xx auto-retry** with Retry-After-aware backoff; endpoint
+  **content-safety rejections** are surfaced as `VISION_CONTENT_FILTERED`
+  instead of a generic backend error.
+- **Long-OCR bounds**: 120s total budget, 40-chunk cap, cancellation checks,
+  stop-on-first-backend-failure.
+- **Path containment** for relative inputs; artifacts land in
+  `<workspace>/.dsh-tool-vision/`.
+
+Requires `sharp` / `potrace` / `puppeteer-core` (declared as optional
+dependencies: a failed platform install never blocks the plugin; missing ones
+degrade lazily with an install hint and never break other tools).
+
+`vision_screenshot` is privacy-sensitive and therefore **not registered by
+default** — set `desktopScreenshot: true` in the tool-vision settings to
+enable desktop capture.
 
 ## Limitations
 
@@ -183,4 +228,6 @@ Example endpoints (`baseURL`):
 
 ## License
 
-MIT
+MIT — bridge preview & integration: xing666173. Pixel vision tools ported
+from [dsh-vision-router](https://github.com/ysr666/dsh-vision-router)
+(© ysr666, MIT) with gratitude.

@@ -43,6 +43,7 @@ import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
 import { ensureSettingsNamespaceExposed } from "./vendor/dsh-settings-expose.js";
+import { registerVisionTools, CONTENT_FILTER_RE } from "./lib/vision-tools.js";
 
 /** Cordis plugin name. */
 const name = "tool-vision";
@@ -110,6 +111,8 @@ const Config = z.object({
   bridgePreviewScanIntervalMs: z.number().default(2000),
   /** Hide the bridged hint text once the preview image has loaded (kept on failure — never "no image AND no text"). */
   bridgePreviewHideHint: z.boolean().default(true),
+  /** Privacy gate for vision_screenshot: desktop capture is only registered when explicitly enabled. */
+  desktopScreenshot: z.boolean().default(false),
   /**
    * Advertise image input capability for every model while the bridge is on.
    * The host admission gate (host-apiproxy `prompt`/`selectModel`) refuses
@@ -611,10 +614,27 @@ function apply(ctx, config) {
       const cfg = getConfig();
       const cwd = exec.agent?.session?.header?.cwd ?? process.cwd();
       const { url, note } = await toImageUrl(args.path, cwd, cfg);
-      const answer = await callVision(cfg, url, args.question, args.detail, exec.signal);
-      return note === url ? answer : `${answer}\n\n(image: ${note})`;
+      try {
+        const answer = await callVision(cfg, url, args.question, args.detail, exec.signal);
+        return note === url ? answer : `${answer}\n\n(image: ${note})`;
+      } catch (error) {
+        const raw = error && error.message ? String(error.message) : String(error);
+        if (CONTENT_FILTER_RE.test(raw)) {
+          throw new Error(
+            "inspect_image: 图片被视觉端点的内容安全策略拒绝(检测到敏感或不安全内容)。" +
+              "这不是网络或配置问题,请换一张图片或调整图片内容后再试。",
+          );
+        }
+        throw error;
+      }
     },
   }));
+
+  // ── pixel-level vision tools (ported from dsh-vision-router) ─────────────
+  // 14 vision_* tools driven by the SAME configured endpoint as inspect_image
+  // (baseURL/apiKey/model). No provider chain, no local models, no extra
+  // settings: everything comes from the existing tool-vision configuration.
+  registerVisionTools(ctx, getConfig);
 }
 
 export {
