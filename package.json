@@ -1,11 +1,11 @@
 {
     "name": "dsh-tool-vision",
-    "version": "0.6.0",
+    "version": "0.6.1",
     "description": "DeepSeek Harness 外置视觉模型插件：inspect_image 把本地图片或 http(s) 图片 URL 发给任意 OpenAI 兼容端点，视觉模型看图的文字回答直接带回对话；附 Web UI 设置栏。",
     "type": "module",
     "main": "index.js",
     "scripts": {
-        "test": "node tests/preview-regex.test.mjs && node tests/preview-route.test.mjs && node tests/auto-image.test.mjs && node --test tests/vision-tools.test.js tests/vision-tools-tools.test.js"
+        "test": "node tests/preview-regex.test.mjs && node tests/preview-route.test.mjs && node tests/auto-image.test.mjs && node --test tests/vision-tools.test.js tests/vision-tools-tools.test.js && node tests/settings-scope-compat.test.mjs"
     },
     "exports": {
         ".": "./index.js",
@@ -68,3 +68,4 @@
         "sharp": ">=0.35.3 <1"
     }
 }
+
