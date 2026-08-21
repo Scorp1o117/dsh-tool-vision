@@ -169,7 +169,7 @@ Example endpoints (`baseURL`):
 >   once more** and the section appears. A dsh update overwrites the patch;
 >   the next plugin start re-applies it.
 > - Settings changes hot-apply (no restart needed).
-> - Tested against DSH `0.1.0-rc.6`.
+> - Tested against DSH `0.1.0-rc.6`, `0.1.0-rc.7`, and `0.1.0-rc.8`.
 
 ## Pixel-level vision tools (v0.6.0, ported from dsh-vision-router)
 
@@ -231,3 +231,4 @@ enable desktop capture.
 MIT — bridge preview & integration: xing666173. Pixel vision tools ported
 from [dsh-vision-router](https://github.com/ysr666/dsh-vision-router)
 (© ysr666, MIT) with gratitude.
+

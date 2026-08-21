@@ -183,7 +183,7 @@ window.__ModuleLoader__.load({
       var [error, setError] = react.useState(null);
 
       react.useEffect(function () {
-        scope.load();
+        if (typeof scope.load === "function") scope.load();
         var alive = true;
         var sync = function () { if (alive) setSnapshot(scope.getSnapshot()); };
         var un = typeof scope.subscribe === "function" ? scope.subscribe(sync) : null;
@@ -246,7 +246,7 @@ window.__ModuleLoader__.load({
         });
         Promise.all(writes).then(function () {
           setBusy(false); setNotice(t("saved"));
-          if (scope.load) scope.load();
+          if (typeof scope.load === "function") scope.load();
         }).catch(function (e) {
           setBusy(false); setError(t("error") + ": " + String(e && e.message || e));
         });
@@ -482,7 +482,7 @@ window.__ModuleLoader__.load({
       var t = ctx.locale.bind(NS);
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "dsh-tool-vision: dictionaries");
       var scope = ctx.settingsScope.bind({ namespace: "tool-vision" });
-      scope.load();
+      if (typeof scope.load === "function") scope.load();
       attachBridgePreview(ctx, scope);
       ctx.slots.inject("settings.section", function () {
         return ctx.slots.register({
@@ -502,3 +502,4 @@ window.__ModuleLoader__.load({
     return module.exports;
   }
 });
+
