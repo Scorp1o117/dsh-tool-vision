@@ -167,8 +167,10 @@ Example endpoints (`baseURL`):
 >   `dsh plugin --profile web add dsh-tool-vision` installs and mounts it in
 >   one step — no manual `cordis.patch.yml` edits needed.
 > - Settings changes hot-apply (no restart needed).
-> - Tested against DSH `0.1.0-rc.6`, `0.1.0-rc.7`, `0.1.0-rc.8`, and
->   `0.1.1-rc.1`.
+> - Version 0.6.3 and newer require DSH `0.1.0-rc.7` or newer and are tested
+>   against `0.1.0-rc.7`, `0.1.0-rc.8`, and `0.1.1-rc.1`.
+> - DSH `0.1.0-rc.6` users must pin `dsh-tool-vision@0.6.1`, the last release
+>   carrying the legacy settings-allowlist compatibility patch.
 
 ## Pixel-level vision tools (v0.6.0, ported from dsh-vision-router)
 
