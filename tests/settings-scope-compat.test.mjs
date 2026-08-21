@@ -4,7 +4,7 @@ import test from 'node:test';
 
 const clientSource = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 
-test('settings scope refresh is compatible with DSH rc6, rc7, and rc8', () => {
+test('settings scope refresh is compatible with DSH rc6 through 0.1.1-rc.1', () => {
   assert.doesNotMatch(clientSource, /^\s*scope\.load\(\);\s*$/m);
   assert.match(clientSource, /typeof scope\.load === ["']function["']/);
 

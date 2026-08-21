@@ -8,7 +8,7 @@
 
 给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 外接**视觉模型**的插件。
 
-DeepSeek 自家模型是纯文本的，而且 harness 的每次模型请求都**严格从会话日志推导**（`llm/stream` 请求必须与持久化推导一致，否则 agent-loop invariant 会报 `log-reconstruction desync`）。本插件用两条路径补上缺口：
+DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件继续提供独立的 OpenAI 兼容视觉端点、像素级图片工具、截图，以及文本模型图片桥。Harness 的每次模型请求都**严格从会话日志推导**（`llm/stream` 请求必须与持久化推导一致，否则 agent-loop invariant 会报 `log-reconstruction desync`），因此图片桥仍在可持久重建的路径内完成转换：
 
 1. **`inspect_image` 工具** —— 把图片（本地文件或 http(s) URL）发给任意支持 `image_url` 内容块的 OpenAI 兼容 `/chat/completions` 端点，把视觉模型的文字回答带回对话。
 2. **图片桥（v0.2.1）** —— 粘贴的图片在**进入持久化日志之前**就被转换成 `inspect_image` 指引文本，拦截点是 `agent/pre-step` waterfall（这是 harness 唯一允许插件替换"进入某一步的消息"的缝；替换后的消息会**成为**持久化的 `user/message` 日志，所以请求重建 invariant 天然满足）。旧版本已经写进日志的图片消息，会在该会话下一次 pre-step 时用 surface `replace` 惰性修复。只有 `multimodalModels` 白名单内的模型直收图片块；**不参考模型的 `inputModalities` 声明**——因为很多配置为了通过 prompt 准入检查，会给纯文本模型声明 `input: [text, image]`（那只是声明，不代表上游真的能吃 `image_url`）。

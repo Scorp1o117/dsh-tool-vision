@@ -42,7 +42,6 @@ import os from "node:os";
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
-import { ensureSettingsNamespaceExposed } from "./vendor/dsh-settings-expose.js";
 import { registerVisionTools, CONTENT_FILTER_RE } from "./lib/vision-tools.js";
 
 /** Cordis plugin name. */
@@ -555,12 +554,6 @@ function apply(ctx, config) {
     },
     onChange: () => {},
   });
-
-  // dsh-host-apiproxy hard-codes which settings namespaces the Web client may
-  // see; without this, the settings section answers `settings-not-exposed`
-  // on any stock install. Patch the allowlist idempotently (self-heals after
-  // dsh updates overwrite the file).
-  ensureSettingsNamespaceExposed(ctx, "tool-vision", ctx.logger);
 
   // ── image bridge: pasted images become inspect_image hints on text-only models ──
   if (getConfig().bridgeTextOnly) {

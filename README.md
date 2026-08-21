@@ -10,10 +10,12 @@ Part of the [DeepSeek Harness Enhancement Suite](https://github.com/Scorp1o117/d
 
 External vision model for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-DeepSeek's own models are text-only, and the harness derives every model
-request strictly from the session log (`llm/stream` requests must equal the
-durable derivation — the agent-loop invariant). This plugin bridges the gap
-in two ways:
+DSH 0.1.1 adds native image input for DeepSeek's vision catalog. This plugin
+remains useful when you want a separate OpenAI-compatible vision endpoint,
+pixel-level image tools, screenshots, or a text-model bridge. The harness
+derives every model request strictly from the session log (`llm/stream`
+requests must equal the durable derivation — the agent-loop invariant), so the
+bridge keeps its conversion inside that durable path:
 
 1. **`inspect_image` tool** — sends an image (local file, or http(s) URL) to
    **any OpenAI-compatible** `/chat/completions` endpoint that supports
@@ -164,12 +166,9 @@ Example endpoints (`baseURL`):
 > - This plugin is a standard **profile bundle** (`dsh.bundle.patch`):
 >   `dsh plugin --profile web add dsh-tool-vision` installs and mounts it in
 >   one step — no manual `cordis.patch.yml` edits needed.
-> - The settings section needs the `dsh-host-apiproxy` namespace allowlist;
->   the plugin patches it automatically on first start — **restart `dsh web`
->   once more** and the section appears. A dsh update overwrites the patch;
->   the next plugin start re-applies it.
 > - Settings changes hot-apply (no restart needed).
-> - Tested against DSH `0.1.0-rc.6`, `0.1.0-rc.7`, and `0.1.0-rc.8`.
+> - Tested against DSH `0.1.0-rc.6`, `0.1.0-rc.7`, `0.1.0-rc.8`, and
+>   `0.1.1-rc.1`.
 
 ## Pixel-level vision tools (v0.6.0, ported from dsh-vision-router)
 
