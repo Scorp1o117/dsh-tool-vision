@@ -187,7 +187,12 @@ window.__ModuleLoader__.load({
         var alive = true;
         var sync = function () { if (alive) setSnapshot(scope.getSnapshot()); };
         var un = typeof scope.subscribe === "function" ? scope.subscribe(sync) : null;
-        return function () { alive = false; if (un) un(); if (scope.dispose) scope.dispose(); };
+        // The settings scope is bound once for this plugin (apply) and shared
+        // across every mount of this section. Unmounting the section must only
+        // unsubscribe — never dispose the scope, or a later remount would find
+        // a `disposed` scope whose write queue no-ops, silently dropping saves
+        // (the value then reverts on the next describe).
+        return function () { alive = false; if (un) un(); };
       }, [scope]);
       // Seed the draft ONLY when the snapshot becomes ready — never on value
       // churn. settingsScope.getSnapshot() returns a fresh object per call,
