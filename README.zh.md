@@ -57,6 +57,9 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 | `bridgePreviewScanIntervalMs` | `2000` | 预览兜底扫描间隔（毫秒）；`0` 关闭兜底 |
 | `bridgePreviewHideHint` | `true` | 图片加载成功后隐藏桥接提示文本（失败时保留，安全降级） |
 | `bridgeAutoImage` | `true` | 桥接开启时向宿主准入检查报告**所有**模型都支持图片输入，纯文本模型也能直接粘贴图片，无需手动改 provider 配置 |
+| `sendSessionHeader` | `true` | 给视觉请求发送稳定的会话标识头。OpenCode Go 等网关要求每请求带 `x-opencode-session`（一个对话一个稳定 ID），缺失的请求在 2026-09-06 起可能报错 |
+| `sessionHeaderName` | `x-opencode-session` | 承载会话 ID 的头名 |
+| `sessionId` | `''` | 固定会话 ID（后台/无 dsh 会话调用时用）；留空则自动：优先取当前 dsh 会话 ID，否则用进程级稳定随机 ID |
 
 ## 图片桥配置
 

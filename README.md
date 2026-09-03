@@ -82,6 +82,9 @@ Or load it from a local path without npm:
 | `bridgePreviewScanIntervalMs` | `2000` | Fallback scan interval for the preview scanner (ms); `0` disables the fallback. |
 | `bridgePreviewHideHint` | `true` | Hide the bridged hint text once the preview image has loaded (kept on failure — safe degradation). |
 | `bridgeAutoImage` | `true` | While the bridge is on, report image input capability for **every** model to the host admission gate, so pasted images are accepted on text-only models without hand-editing provider configs. |
+| `sendSessionHeader` | `true` | Send a stable session-id header on vision requests. OpenCode Go and similar gateways require `x-opencode-session` (one stable id per conversation); requests without it may error from 2026-09-06. |
+| `sessionHeaderName` | `x-opencode-session` | Header name carrying the session id. |
+| `sessionId` | `''` | Fixed session id for calls without a dsh session context; empty = auto (current dsh session id, else a stable per-process random id). |
 
 ## Image bridge setup
 

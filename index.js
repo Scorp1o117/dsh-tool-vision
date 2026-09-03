@@ -41,15 +41,15 @@ import { extname, isAbsolute, join, resolve as resolvePath, sep } from "node:pat
 import os from "node:os";
 import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { installSettingsSection, settingsNamespace } from "@deepseek-ai/dsh-settings";
 import { registerVisionTools, CONTENT_FILTER_RE } from "./lib/vision-tools.js";
+import { sessionHeaders } from "./lib/session-header.js";
 
 /** Cordis plugin name. */
 const name = "tool-vision";
 /** The tool registry, the llm seam (model capability lookup), the attachment store, and the host web server. */
 const inject = ["tools", "llm", "attachments", "webServer"];
 /** Settings namespace owned by this plugin (Web UI settings section). */
-const NS = settingsNamespace("tool-vision");
+const NS = "tool-vision";
 
 /**
  * Invisible prefix stamped onto every bridged hint text block. The browser
@@ -123,6 +123,17 @@ const Config = z.object({
    * provider model configs.
    */
   bridgeAutoImage: z.boolean().default(true),
+  /** Send a stable per-conversation id header (`x-opencode-session`) on vision
+   * requests. OpenCode Go (and similar OpenAI-compatible gateways) require it
+   * on every request; requests without the header may error. The value is the
+   * current dsh session id when the call runs inside one, else `sessionId`
+   * below, else a stable per-process random id. Set false to disable. */
+  sendSessionHeader: z.boolean().default(true),
+  /** Header name carrying the session id. */
+  sessionHeaderName: z.string().default("x-opencode-session"),
+  /** Fixed session id override for callers without a dsh session context.
+   * Empty = auto (per-process stable id). */
+  sessionId: z.string().default(""),
 });
 
 const MIME_BY_EXT = {
@@ -476,7 +487,7 @@ async function toImageUrl(target, cwd, config) {
 }
 
 /** One OpenAI-compatible chat/completions call with an image_url content part. */
-async function callVision(config, imageUrl, question, detail, signal) {
+async function callVision(config, imageUrl, question, detail, signal, exec) {
   const key = resolveApiKey(config);
   if (!key) {
     throw new Error(
@@ -485,6 +496,7 @@ async function callVision(config, imageUrl, question, detail, signal) {
   }
   const base = config.baseURL.endsWith("/") ? config.baseURL : `${config.baseURL}/`;
   const endpoint = new URL("chat/completions", base);
+  const sessionHeader = sessionHeaders(config, exec);
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error(`vision request timed out after ${config.timeoutMs}ms`)),
@@ -505,6 +517,7 @@ async function callVision(config, imageUrl, question, detail, signal) {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${key}`,
+        ...sessionHeader,
       },
       body: JSON.stringify({
         model: config.model,
@@ -541,18 +554,24 @@ function apply(ctx, config) {
   // ── settings-backed configuration ─────────────────────────────────────────
   // The composition entry stays the `base` layer; a registered `tool-vision`
   // settings section (Web UI section, settings.yaml) overlays it live, so
-  // edits hot-apply without a restart. `installSettingsSection` hands
-  // `setSource` a GETTER (`() => scope.get()`), not the config object — keep
-  // it and call it at use time, or `getConfig()` would return a function and
-  // every `cfg.*` read would be undefined (apiKey included).
+  // edits hot-apply without a restart. `sourceGetter` is a GETTER
+  // (`() => scope.get()`), not the config object — keep it and call it at use
+  // time, or `getConfig()` would return a function and every `cfg.*` read
+  // would be undefined (apiKey included).
   let current = config;
   let sourceGetter = null;
   const getConfig = () => (sourceGetter ? sourceGetter() : current);
-  installSettingsSection(ctx, NS, Config, config, {
-    setSource: (getter) => {
-      sourceGetter = getter;
-    },
-    onChange: () => {},
+  // Compat shim: dsh-settings 0.1.2-rc.1 removed the module-level
+  // `installSettingsSection` export (the provider now lives at ctx.settings).
+  // Inline the same logic via ctx.inject(["settings"]) — works on both
+  // 0.1.1 (module export wrapper) and 0.1.2 (ctx.settings) hosts.
+  ctx.inject(["settings"], (sctx) => {
+    const scope = sctx.settings.register(NS, Config, { base: config });
+    sourceGetter = () => scope.get();
+    sctx.effect(() => () => {
+      sourceGetter = null;
+    });
+    scope.watch(() => {});
   });
 
   // ── image bridge: pasted images become inspect_image hints on text-only models ──
@@ -608,7 +627,7 @@ function apply(ctx, config) {
       const cwd = exec.agent?.session?.header?.cwd ?? process.cwd();
       const { url, note } = await toImageUrl(args.path, cwd, cfg);
       try {
-        const answer = await callVision(cfg, url, args.question, args.detail, exec.signal);
+        const answer = await callVision(cfg, url, args.question, args.detail, exec.signal, exec);
         return note === url ? answer : `${answer}\n\n(image: ${note})`;
       } catch (error) {
         const raw = error && error.message ? String(error.message) : String(error);

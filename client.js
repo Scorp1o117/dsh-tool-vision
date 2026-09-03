@@ -80,6 +80,11 @@ window.__ModuleLoader__.load({
       fieldBridgePreviewHideHint: "图片加载成功后隐藏桥接提示文本",
       fieldBridgeAutoImage: "自动声明图片能力（纯文本模型也能粘贴图片）",
       fieldDesktopScreenshot: "桌面截屏工具（vision_screenshot，默认关闭）",
+      fieldSendSessionHeader: "发送会话标识头（x-opencode-session）",
+      fieldSessionHeaderName: "会话标识头名称",
+      fieldSessionId: "固定会话 ID（留空 = 自动）",
+      hintSendSessionHeader: "OpenCode Go 等网关要求每个请求带稳定的会话标识（一个对话一个 ID）；请求不带可能报错。默认发送：优先用当前 dsh 会话 ID，无会话上下文时用下方固定 ID，再否则用进程级随机 ID。",
+      hintSessionId: "后台/无会话调用时使用的固定会话标识（如 dsh-vision-<hostname>）；留空则每进程自动生成一个稳定 ID。",
       hintBridgePreview: "纯展示层：不影响模型侧文本与 inspect_image 调用。",
       hintBridgePreviewScanIntervalMs: "默认 2000ms；越小响应越快，越大越省资源。",
       hintBridgePreviewHideHint: "加载失败时保留文本（安全降级，绝不出现既无图又无字）。",
@@ -119,6 +124,11 @@ window.__ModuleLoader__.load({
       fieldBridgePreviewHideHint: "Hide the bridged hint text once the image has loaded",
       fieldBridgeAutoImage: "Auto-declare image capability (paste images on text-only models)",
       fieldDesktopScreenshot: "Desktop screenshot tool (vision_screenshot, off by default)",
+      fieldSendSessionHeader: "Send session-id header (x-opencode-session)",
+      fieldSessionHeaderName: "Session-id header name",
+      fieldSessionId: "Fixed session id (empty = auto)",
+      hintSendSessionHeader: "OpenCode Go and similar gateways require a stable per-conversation id on every request; requests without it may error. When on: prefer the current dsh session id, else the fixed id below, else a per-process random id.",
+      hintSessionId: "Fixed session id used for background calls without a dsh session; leave empty for a per-process stable random id.",
       hintBridgePreview: "Pure display layer: the model-facing text and the inspect_image chain are untouched.",
       hintBridgePreviewScanIntervalMs: "Default 2000ms; lower is snappier, higher is cheaper.",
       hintBridgePreviewHideHint: "Text is kept on load failure (safe degradation, never no image AND no text).",
@@ -150,7 +160,10 @@ window.__ModuleLoader__.load({
       { key: "bridgePreviewScanIntervalMs", label: "fieldBridgePreviewScanIntervalMs", type: "number" },
       { key: "bridgePreviewHideHint", label: "fieldBridgePreviewHideHint", type: "checkbox" },
       { key: "bridgeAutoImage", label: "fieldBridgeAutoImage", type: "checkbox" },
-      { key: "desktopScreenshot", label: "fieldDesktopScreenshot", type: "checkbox" }
+      { key: "desktopScreenshot", label: "fieldDesktopScreenshot", type: "checkbox" },
+      { key: "sendSessionHeader", label: "fieldSendSessionHeader", type: "checkbox" },
+      { key: "sessionHeaderName", label: "fieldSessionHeaderName", type: "text" },
+      { key: "sessionId", label: "fieldSessionId", type: "text" }
     ];
     var ZH_HINTS = {
       apiKey: "apiKeyHint",

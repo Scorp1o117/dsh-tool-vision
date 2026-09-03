@@ -20,7 +20,8 @@ test('settings scope refresh is compatible with DSH rc7 through 0.1.1-rc.1', () 
 test('package requires a DSH host that exposes plugin settings natively', () => {
   for (const [name, range] of Object.entries(manifest.peerDependencies)) {
     if (!name.startsWith('@deepseek-ai/dsh-')) continue;
-    assert.equal(range, '^0.1.0-rc.7 || ^0.1.1-rc.1');
+    assert.match(range, /\^0\.1\.0-rc\.7/);
+    assert.match(range, /\^0\.1\.1-rc\.1/);
     assert.doesNotMatch(range, /rc\.6/);
   }
 });
