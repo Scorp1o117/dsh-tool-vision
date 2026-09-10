@@ -247,6 +247,13 @@ effect" plus a reload of the form. Hosts without `mutate()` fall back to
 **sequential** writes (each waits for its predecessor, keeping the revision chain
 intact) — never parallel.
 
+Also removes three `if (typeof scope.load === "function") scope.load()` guards.
+The `SettingsScope` seam has never had `load()` — it is `getSnapshot` /
+`subscribe` / `mutate` / `set` / `unset`, and reads ride the shared describe
+mirror driven by the Host's `settings/document-updated`. Those guards were dead
+code that read like a refresh which never happened, and they made the missing
+write verification look intentional.
+
 ## Limitations
 
 - A bridged image enters the conversation as a text hint (a transcript, not

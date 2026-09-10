@@ -176,6 +176,11 @@ fiber，15 个工具一并从模型侧消失。设置栏留在父 fiber 上，�
 重新载入表单。没有 `mutate()` 的旧宿主回退为**串行**写入（每个等前一个完成，revision
 链条依然正确），绝不并行。
 
+另外删掉了 3 处 `if (typeof scope.load === "function") scope.load()`：`SettingsScope` 接口
+从来没有 `load()`（完整 seam 只有 getSnapshot / subscribe / mutate / set / unset，读走的是
+共享 describe 镜像，由宿主 `settings/document-updated` 驱动刷新）。这些守卫是照臆测 API 写的
+死代码，读起来像"已经刷新过了"，反而掩盖了缺失的写入校验。
+
 ## 限制
 
 - 从 `0.6.3` 起最低支持 DSH `0.1.0-rc.7`，已针对 `0.1.0-rc.7`、

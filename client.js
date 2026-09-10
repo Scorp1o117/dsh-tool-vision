@@ -215,7 +215,10 @@ window.__ModuleLoader__.load({
       var [error, setError] = react.useState(null);
 
       react.useEffect(function () {
-        if (typeof scope.load === "function") scope.load();
+        // No refresh call: the scope's public seam has no load() — reads ride the
+        // shared describe mirror, which re-reads on every Host
+        // `settings/document-updated`. The guarded scope.load() that used to sit
+        // here was dead code that read like a refresh that never happened.
         var alive = true;
         var sync = function () { if (alive) setSnapshot(scope.getSnapshot()); };
         var un = typeof scope.subscribe === "function" ? scope.subscribe(sync) : null;
@@ -368,19 +371,17 @@ window.__ModuleLoader__.load({
       }
 
       function reseedDraft() {
-        if (typeof scope.load === "function") {
-          var p = scope.load();
-          if (p && typeof p.then === "function") {
-            p.then(function () {
-              var fresh = scope.getSnapshot();
-              if (fresh.status === "ready" && fresh.value !== void 0) setDraft(Object.assign({}, valueToDraft(fresh.value)));
-            }).catch(function () {});
-            return;
-          }
+        // The mirror folds a write's answer in before the promise settles, so the
+        // snapshot is already current; the timeout only covers a host that
+        // answers late.
+        var fresh = scope.getSnapshot();
+        if (fresh.status === "ready" && fresh.value !== void 0) {
+          setDraft(Object.assign({}, valueToDraft(fresh.value)));
+          return;
         }
         setTimeout(function () {
-          var fresh = scope.getSnapshot();
-          if (fresh.status === "ready" && fresh.value !== void 0) setDraft(Object.assign({}, valueToDraft(fresh.value)));
+          var later = scope.getSnapshot();
+          if (later.status === "ready" && later.value !== void 0) setDraft(Object.assign({}, valueToDraft(later.value)));
         }, 120);
       }
 
@@ -609,7 +610,6 @@ window.__ModuleLoader__.load({
       var t = ctx.locale.bind(NS);
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "dsh-tool-vision: dictionaries");
       var scope = ctx.settingsScope.bind({ namespace: "tool-vision" });
-      if (typeof scope.load === "function") scope.load();
       attachBridgePreview(ctx, scope);
       ctx.slots.inject("settings.section", function () {
         return ctx.slots.register({
