@@ -82,6 +82,15 @@ const DEFAULT_DESCRIPTION =
 
 /** Runtime schema for the tool-vision row. */
 const Config = z.object({
+  /**
+   * Master switch, hot-applied. When off the plugin registers nothing at all —
+   * no `inspect_image`, none of the 14 `vision_*` tools, no pre-step bridge, no
+   * preview route, no llm capability wrap — while the settings section itself
+   * stays mounted so the switch can turn it back on. Turning it off is the way
+   * to stop every vision tool from reaching the model without uninstalling the
+   * package or restarting dsh.
+   */
+  enabled: z.boolean().default(true),
   /** Base URL of an OpenAI-compatible API, e.g. https://api.openai.com/v1 or https://dashscope.aliyuncs.com/compatible-mode/v1 */
   baseURL: z.string().default("https://api.openai.com/v1"),
   /** API key; takes precedence over apiKeyEnv. Rendered as a write-only secret in the Web UI. */
@@ -561,6 +570,133 @@ function apply(ctx, config) {
   let current = config;
   let sourceGetter = null;
   const getConfig = () => (sourceGetter ? sourceGetter() : current);
+
+  // ── master switch: a child fiber owns every registration ──────────────────
+  // `ctx.tools.register`, `ctx.effect` and `ctx.on` are all effects on the fiber
+  // that makes them, so confining the tool/bridge/route registrations to a child
+  // fiber makes `enabled` real: disposing that fiber unregisters all 15 tools,
+  // removes the pre-step listener and the preview route, and restores the llm
+  // capability wrap. The settings registration deliberately stays on the parent
+  // fiber — it has to outlive the switch, or the section that turns the plugin
+  // back on would vanish with it.
+  const REGISTRATION_KEYS = [
+    "enabled",
+    "bridgeTextOnly",
+    "bridgeExportDir",
+    "bridgeAutoImage",
+    "bridgePreview",
+  ];
+  let featureFiber = null;
+  let lastRegistrationKey = null;
+
+  function registrationKey(cfg) {
+    return REGISTRATION_KEYS.map((key) => String(cfg[key])).join("|");
+  }
+
+  function installFeatures() {
+    if (featureFiber !== null) return;
+    featureFiber = ctx.plugin({
+      name: "dsh-tool-vision:features",
+      apply(inner) {
+        // ── image bridge: pasted images become inspect_image hints on text-only models ──
+        if (getConfig().bridgeTextOnly) {
+          const exportDir = getConfig().bridgeExportDir || join(os.tmpdir(), "dsh-vision-bridge");
+          mkdir(exportDir, { recursive: true }).catch(() => {});
+          // Root-level listener: agent-scoped waterfalls admit untagged listeners,
+          // so one registration serves every agent (new and resumed alike) and the
+          // agent is read from the fused payload.
+          attachPreStepBridge(inner, getConfig, exportDir);
+
+          // ── automatic image admission: let pasted images through on text-only models ──
+          // The host gate refuses images unless the model declares `image` input;
+          // the bridge handles them anyway, so report image support for all models.
+          // The wrap is installed on the shared llm service instance (idempotent,
+          // restored on dispose/HMR).
+          if (getConfig().bridgeAutoImage) {
+            const unwrap = installAutoImageAdmission(inner.get("llm"), inner.logger);
+            inner.effect(() => unwrap, "dsh-tool-vision: automatic image admission");
+          }
+
+          // ── bridge image preview: same-origin thumbnails for bridged images ──
+          if (getConfig().bridgePreview) {
+            registerBridgePreviewRoute(inner, exportDir, inner.logger);
+          }
+        }
+
+        inner.tools.register(defineTool({
+          name: "inspect_image",
+          description: getConfig().description,
+          parameters: {
+            path: {
+              type: "string",
+              required: true,
+              description: "Path to the image file (absolute, or relative to the current workspace) or an http(s) URL.",
+            },
+            question: {
+              type: "string",
+              description: "Optional specific question about the image. Omit for a general detailed description.",
+            },
+            detail: {
+              type: "string",
+              enum: ["auto", "low", "high"],
+              description: "Optional image resolution hint for the vision API (auto by default).",
+            },
+          },
+          output: {
+            schema: { type: "string" },
+            render: (_args, value) => [{ type: "text", text: value }],
+          },
+          async execute(args, exec) {
+            const cfg = getConfig();
+            const cwd = exec.agent?.session?.header?.cwd ?? process.cwd();
+            const { url, note } = await toImageUrl(args.path, cwd, cfg);
+            try {
+              const answer = await callVision(cfg, url, args.question, args.detail, exec.signal, exec);
+              return note === url ? answer : `${answer}\n\n(image: ${note})`;
+            } catch (error) {
+              const raw = error && error.message ? String(error.message) : String(error);
+              if (CONTENT_FILTER_RE.test(raw)) {
+                throw new Error(
+                  "inspect_image: 图片被视觉端点的内容安全策略拒绝(检测到敏感或不安全内容)。" +
+                    "这不是网络或配置问题,请换一张图片或调整图片内容后再试。",
+                );
+              }
+              throw error;
+            }
+          },
+        }));
+
+        // ── pixel-level vision tools (ported from dsh-vision-router) ─────────────
+        // 14 vision_* tools driven by the SAME configured endpoint as inspect_image
+        // (baseURL/apiKey/model). No provider chain, no local models, no extra
+        // settings: everything comes from the existing tool-vision configuration.
+              registerVisionTools(inner, getConfig);
+      },
+    });
+  }
+
+  function uninstallFeatures() {
+    if (featureFiber === null) return;
+    const fiber = featureFiber;
+    featureFiber = null;
+    // dispose() settles asynchronously and must never take the plugin down; the
+    // next install starts a fresh fiber regardless of how this one ends.
+    Promise.resolve(fiber.dispose()).catch((error) => {
+      ctx.logger?.warn?.(`[tool-vision] feature teardown failed: ${String(error)}`);
+    });
+  }
+
+  // Re-install only when a field that gates a registration actually changed, so
+  // editing, say, `model` does not tear the tools down and back up mid-session.
+  function syncFeatures() {
+    const cfg = getConfig();
+    const key = registrationKey(cfg);
+    if (featureFiber !== null && key === lastRegistrationKey) return;
+    uninstallFeatures();
+    lastRegistrationKey = key;
+    if (cfg.enabled) installFeatures();
+  }
+
   // Compat shim: dsh-settings 0.1.2-rc.1 removed the module-level
   // `installSettingsSection` export (the provider now lives at ctx.settings).
   // Inline the same logic via ctx.inject(["settings"]) — works on both
@@ -571,82 +707,17 @@ function apply(ctx, config) {
     sctx.effect(() => () => {
       sourceGetter = null;
     });
-    scope.watch(() => {});
+    // Hot-apply: `enabled` switches the child fiber, and any field that gates a
+    // registration re-installs it, so none of them needs a dsh restart anymore.
+    scope.watch(() => syncFeatures());
+    sctx.effect(() => () => uninstallFeatures());
+    // The stored value governs from here on; the composition entry was only a
+    // placeholder until the provider answered.
+    syncFeatures();
   });
 
-  // ── image bridge: pasted images become inspect_image hints on text-only models ──
-  if (getConfig().bridgeTextOnly) {
-    const exportDir = getConfig().bridgeExportDir || join(os.tmpdir(), "dsh-vision-bridge");
-    mkdir(exportDir, { recursive: true }).catch(() => {});
-    // Root-level listener: agent-scoped waterfalls admit untagged listeners,
-    // so one registration serves every agent (new and resumed alike) and the
-    // agent is read from the fused payload.
-    attachPreStepBridge(ctx, getConfig, exportDir);
-
-    // ── automatic image admission: let pasted images through on text-only models ──
-    // The host gate refuses images unless the model declares `image` input;
-    // the bridge handles them anyway, so report image support for all models.
-    // The wrap is installed on the shared llm service instance (idempotent,
-    // restored on dispose/HMR).
-    if (getConfig().bridgeAutoImage) {
-      const unwrap = installAutoImageAdmission(ctx.get("llm"), ctx.logger);
-      ctx.effect(() => unwrap, "dsh-tool-vision: automatic image admission");
-    }
-
-    // ── bridge image preview: same-origin thumbnails for bridged images ──
-    if (getConfig().bridgePreview) {
-      registerBridgePreviewRoute(ctx, exportDir, ctx.logger);
-    }
-  }
-
-  ctx.tools.register(defineTool({
-    name: "inspect_image",
-    description: getConfig().description,
-    parameters: {
-      path: {
-        type: "string",
-        required: true,
-        description: "Path to the image file (absolute, or relative to the current workspace) or an http(s) URL.",
-      },
-      question: {
-        type: "string",
-        description: "Optional specific question about the image. Omit for a general detailed description.",
-      },
-      detail: {
-        type: "string",
-        enum: ["auto", "low", "high"],
-        description: "Optional image resolution hint for the vision API (auto by default).",
-      },
-    },
-    output: {
-      schema: { type: "string" },
-      render: (_args, value) => [{ type: "text", text: value }],
-    },
-    async execute(args, exec) {
-      const cfg = getConfig();
-      const cwd = exec.agent?.session?.header?.cwd ?? process.cwd();
-      const { url, note } = await toImageUrl(args.path, cwd, cfg);
-      try {
-        const answer = await callVision(cfg, url, args.question, args.detail, exec.signal, exec);
-        return note === url ? answer : `${answer}\n\n(image: ${note})`;
-      } catch (error) {
-        const raw = error && error.message ? String(error.message) : String(error);
-        if (CONTENT_FILTER_RE.test(raw)) {
-          throw new Error(
-            "inspect_image: 图片被视觉端点的内容安全策略拒绝(检测到敏感或不安全内容)。" +
-              "这不是网络或配置问题,请换一张图片或调整图片内容后再试。",
-          );
-        }
-        throw error;
-      }
-    },
-  }));
-
-  // ── pixel-level vision tools (ported from dsh-vision-router) ─────────────
-  // 14 vision_* tools driven by the SAME configured endpoint as inspect_image
-  // (baseURL/apiKey/model). No provider chain, no local models, no extra
-  // settings: everything comes from the existing tool-vision configuration.
-  registerVisionTools(ctx, getConfig);
+  // No settings provider: the composition entry is the whole configuration.
+  syncFeatures();
 }
 
 export {

@@ -40,6 +40,10 @@ window.__ModuleLoader__.load({
       ".__tv_btn:hover:not(:disabled){border-color:var(--dsw-alias-state-business-primary)}" +
       ".__tv_btn:disabled{opacity:.5;cursor:default}" +
       ".__tv_btnPrimary{border-color:var(--dsw-alias-state-business-primary, #3964fe);background:var(--dsw-alias-state-business-primary, #3964fe);color:#fff}" +
+      ".__tv_btnDanger{border-color:var(--dsw-alias-state-error-primary, #e5484d);color:var(--dsw-alias-state-error-primary, #e5484d)}" +
+      ".__tv_btnDanger:hover:not(:disabled){background:var(--dsw-alias-state-error-primary, #e5484d);color:#fff}" +
+      ".__tv_master{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;margin:2px 0 6px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2)}" +
+      ".__tv_masterLabel{font-size:13px;color:var(--dsw-alias-label-primary)}" +
       ".__tv_status{font-size:12px;color:var(--dsw-alias-label-tertiary)}" +
       ".__tv_error{font-size:12px;color:var(--dsw-alias-state-error-primary)}" +
       ".__tv_unavailable{font-size:13px;color:var(--dsw-alias-label-tertiary)}";
@@ -97,7 +101,14 @@ window.__ModuleLoader__.load({
       error: "保存失败",
       unavailable: "设置命名空间不可用（服务端未注册 tool-vision 命名空间？）",
       overridden: "已覆盖",
-      loading: "加载中…"
+      loading: "加载中…",
+      fieldEnabled: "启用插件（关闭后所有视觉工具下线）",
+      masterSwitch: "总开关",
+      turnOff: "一键关闭",
+      turnOn: "重新启用",
+      enabledNotice: "已启用：视觉工具已上线",
+      disabledNotice: "已关闭：所有视觉工具已下线",
+      notApplied: "写入未生效"
     };
     var en = {
       nav: "Vision Model",
@@ -141,11 +152,19 @@ window.__ModuleLoader__.load({
       error: "Save failed",
       unavailable: "Settings namespace unavailable (tool-vision namespace not registered server-side?)",
       overridden: "overridden",
-      loading: "Loading…"
+      loading: "Loading…",
+      fieldEnabled: "Enable plugin (off takes every vision tool offline)",
+      masterSwitch: "Master switch",
+      turnOff: "Disable all",
+      turnOn: "Re-enable",
+      enabledNotice: "Enabled: vision tools are live",
+      disabledNotice: "Disabled: every vision tool is offline",
+      notApplied: "Write did not take effect"
     };
 
     // ── field spec ────────────────────────────────────────────────────────
     var FIELDS = [
+      { key: "enabled", label: "fieldEnabled", type: "checkbox" },
       { key: "baseURL", label: "fieldBaseUrl", type: "text", placeholder: "https://api.openai.com/v1" },
       { key: "apiKey", label: "fieldApiKey", type: "password", secret: true },
       { key: "apiKeyEnv", label: "fieldApiKeyEnv", type: "text" },
@@ -239,34 +258,112 @@ window.__ModuleLoader__.load({
         setError(null);
       }
 
-      function onSave() {
-        setBusy(true); setNotice(null); setError(null);
-        var writes = FIELDS.map(function (f) {
+      // One atomic mutation carrying ONE revision fence.
+      //
+      // The fields used to be issued as parallel scope.set()/unset() calls. Every
+      // write is queued and re-reads the namespace revision, but a write whose
+      // fence is behind the Host document is REFUSED with settings/conflict — and
+      // a refused write still resolves (the scope's contract is "settle after any
+      // recovery read", not "throw on refusal"). The section therefore reported
+      // "Saved" while the edits silently reverted. Batching every change into a
+      // single mutate() gives it one fence and one persistence decision.
+      function buildOps() {
+        var ops = [];
+        FIELDS.forEach(function (f) {
           var d = fieldDraft(f);
           if (f.type === "csv") {
             var arr = String(d).split(",").map(function (s) { return s.trim(); }).filter(Boolean);
             var cur = value[f.key] || [];
-            if (arr.length === cur.length && arr.every(function (x, i) { return x === cur[i]; })) return Promise.resolve();
-            return scope.set(f.key, arr);
+            if (arr.length === cur.length && arr.every(function (x, i) { return x === cur[i]; })) return;
+            ops.push({ op: "set", path: [f.key], value: arr });
+            return;
           }
           if (f.type === "checkbox") {
-            if (Boolean(d) === Boolean(value[f.key])) return Promise.resolve();
-            return Boolean(d) ? scope.set(f.key, true) : scope.unset(f.key);
+            if (Boolean(d) === Boolean(value[f.key])) return;
+            ops.push(Boolean(d) ? { op: "set", path: [f.key], value: true }
+                                : { op: "unset", path: [f.key] });
+            return;
           }
           if (f.type === "password") {
-            if (!d) return Promise.resolve(); // blank keeps the current key
-            if (d === String(value[f.key] ?? "")) return Promise.resolve();
-            return scope.set(f.key, d);
+            if (!d) return; // blank keeps the current key
+            if (d === String(value[f.key] ?? "")) return;
+            ops.push({ op: "set", path: [f.key], value: d });
+            return;
           }
-          if (String(d) === String(value[f.key] ?? "")) return Promise.resolve();
-          if (String(d).trim() === "" && !(f.key in user)) return Promise.resolve();
-          return String(d).trim() === "" ? scope.unset(f.key) : scope.set(f.key, f.type === "number" ? Number(d) : d);
+          if (String(d) === String(value[f.key] ?? "")) return;
+          if (String(d).trim() === "" && !(f.key in user)) return;
+          ops.push(String(d).trim() === ""
+            ? { op: "unset", path: [f.key] }
+            : { op: "set", path: [f.key], value: f.type === "number" ? Number(d) : d });
         });
-        Promise.all(writes).then(function () {
-          setBusy(false); setNotice(t("saved"));
-          if (typeof scope.load === "function") scope.load();
+        return ops;
+      }
+
+      /** Whether the namespace section now reflects every queued operation. */
+      function opsApplied(ops, snap) {
+        if (snap.status !== "ready" || snap.value === void 0) return false;
+        return ops.every(function (op) {
+          var key = op.path[0];
+          if (op.op === "unset") return !(snap.user && key in snap.user);
+          return JSON.stringify(snap.value[key]) === JSON.stringify(op.value);
+        });
+      }
+
+      /**
+       * Settle one namespace change and report what actually happened.
+       *
+       * Reads settle after the write and any recovery read, so the section is
+       * inspected afterwards instead of trusting the promise: that check is the
+       * only way to tell a committed change from a refused one. Hosts without
+       * mutate() apply the same ops in order — each waits for its predecessor, so
+       * the revision chain still holds.
+       */
+      function commit(ops) {
+        var run;
+        if (typeof scope.mutate === "function") {
+          run = scope.mutate(ops, scope.getSnapshot().revision);
+        } else {
+          run = ops.reduce(function (chain, op) {
+            return chain.then(function () {
+              return op.op === "unset" ? scope.unset(op.path[0]) : scope.set(op.path[0], op.value);
+            });
+          }, Promise.resolve());
+        }
+        return Promise.resolve(run).then(function () {
+          return opsApplied(ops, scope.getSnapshot());
+        });
+      }
+
+      function reportOutcome(ok, okMessage) {
+        setBusy(false);
+        if (ok) {
+          setNotice(okMessage || t("saved"));
+          return;
+        }
+        setError(t("error") + "：" + t("notApplied"));
+        reseedDraft();
+      }
+
+      function onSave() {
+        setBusy(true); setNotice(null); setError(null);
+        var ops = buildOps();
+        if (ops.length === 0) { setBusy(false); setNotice(t("saved")); return; }
+        commit(ops).then(function (ok) {
+          reportOutcome(ok);
         }).catch(function (e) {
-          setBusy(false); setError(t("error") + ": " + String(e && e.message || e));
+          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
+        });
+      }
+
+      // One-click master switch: the same field the checkbox edits, written on its
+      // own so taking the plugin offline never depends on the rest of the form.
+      function onToggleEnabled() {
+        setBusy(true); setNotice(null); setError(null);
+        var next = value.enabled === false;
+        commit([{ op: "set", path: ["enabled"], value: next }]).then(function (ok) {
+          reportOutcome(ok, next ? t("enabledNotice") : t("disabledNotice"));
+        }).catch(function (e) {
+          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
         });
       }
 
@@ -289,16 +386,28 @@ window.__ModuleLoader__.load({
 
       function onReset() {
         setBusy(true); setNotice(null); setError(null);
-        Promise.all(FIELDS.map(function (f) { return scope.unset(f.key); })).then(function () {
-          setBusy(false); setNotice(t("saved"));
-          reseedDraft();
+        var ops = FIELDS
+          .filter(function (f) { return f.key in user; })
+          .map(function (f) { return { op: "unset", path: [f.key] }; });
+        if (ops.length === 0) { setBusy(false); setNotice(t("saved")); return; }
+        commit(ops).then(function (ok) {
+          reportOutcome(ok);
         }).catch(function (e) {
-          setBusy(false); setError(t("error") + ": " + String(e && e.message || e));
+          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
         });
       }
 
       return h("div", { className: "__tv_root" },
         h("p", { className: "__tv_hint", style: { margin: "0 0 4px" } }, t("intro")),
+        h("div", { className: "__tv_master" },
+          h("span", { className: "__tv_masterLabel" },
+            t("masterSwitch") + (value.enabled === false ? "：" + t("disabledNotice") : "")),
+          h("button", {
+            type: "button",
+            className: "__tv_btn " + (value.enabled === false ? "__tv_btnPrimary" : "__tv_btnDanger"),
+            onClick: onToggleEnabled,
+            disabled: busy || !snapshot.writable
+          }, value.enabled === false ? t("turnOn") : t("turnOff"))),
         FIELDS.map(function (f) {
           var overridden = f.key in user;
           if (f.type === "checkbox") {

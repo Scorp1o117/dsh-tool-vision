@@ -67,6 +67,7 @@ Or load it from a local path without npm:
 
 | Field | Default | Meaning |
 |---|---|---|
+| `enabled` | `true` | **Master switch (v0.8.0).** Off unregisters everything this plugin contributes — `inspect_image`, the 14 `vision_*` tools, the image bridge, the preview route and the image-capability declaration. The settings section stays mounted so the switch can turn it back on. Hot-applies; no dsh restart. |
 | `baseURL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL. |
 | `apiKey` | `''` | API key (takes precedence over env). |
 | `apiKeyEnv` | `VISION_API_KEY` | Env var holding the key. |
@@ -220,6 +221,31 @@ degrade lazily with an install hint and never break other tools).
 `vision_screenshot` is privacy-sensitive and therefore **not registered by
 default** — set `desktopScreenshot: true` in the tool-vision settings to
 enable desktop capture.
+
+## v0.8.0: master switch, and the save-path fix
+
+**Master switch.** `enabled`, plus a one-click button at the top of the section
+(`Disable all` / `Re-enable`). Registrations are effects on the cordis fiber
+that makes them, so the plugin now puts every tool, the image bridge, the
+preview route and the image-capability declaration in a **child fiber**: turning
+the switch off disposes it, and all 15 tools leave the model's tool list
+together. The settings section stays on the parent fiber, so the switch can turn
+the plugin back on. No dsh restart.
+
+**Save-path fix.** The form used to submit its 18 fields as **parallel**
+`scope.set()/unset()` calls. Each write carries its own revision fence, a fence
+behind the Host document is refused with `settings/conflict`, and **a refused
+write still resolves** — the scope's contract is "settle after the write and any
+recovery read", not "throw on refusal". The section therefore reported "Saved"
+while the edits silently reverted, which reads as "settings cannot be saved at
+all".
+
+Writes are now **one atomic `mutate()`**, so the whole batch shares one fence and
+one persistence decision, and the section is inspected after the write settles:
+"Saved" only when the change is really there, otherwise "Write did not take
+effect" plus a reload of the form. Hosts without `mutate()` fall back to
+**sequential** writes (each waits for its predecessor, keeping the revision chain
+intact) — never parallel.
 
 ## Limitations
 
