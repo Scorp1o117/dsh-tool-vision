@@ -86,10 +86,10 @@ await new Promise((r) => server2.listen(0, '127.0.0.1', r))
 const base = `http://127.0.0.1:${server2.address().port}/plugins/dsh-tool-vision/image`
 
 const tests = [
-  ['valid png in dir (missing file)', `${base}?p=${encodeURIComponent(BRIDGE_DIR + '\\x.png')}`, 404],
+  ['valid png in dir (missing file)', `${base}?p=${encodeURIComponent(join(BRIDGE_DIR, 'x.png'))}`, 404],
   ['missing param', base, 400],
-  ['non-image ext', `${base}?p=${encodeURIComponent(BRIDGE_DIR + '\\x.txt')}`, 400],
-  ['outside dir (valid ext)', `${base}?p=${encodeURIComponent('C:\\Windows\\x.png')}`, 403], // ext 合法 → 目录校验拦截
+  ['non-image ext', `${base}?p=${encodeURIComponent(join(BRIDGE_DIR, 'x.txt'))}`, 400],
+  ['outside dir (valid ext)', `${base}?p=${encodeURIComponent(resolve(BRIDGE_DIR, '..', 'x.png'))}`, 403], // ext 合法 → 目录校验拦截
 ]
 for (const [label, url, want] of tests) {
   const r = await rawGet(url)
@@ -100,7 +100,7 @@ for (const [label, url, want] of tests) {
 
 // Host 检查(原始 http 可带自定义 Host)
 for (const [label, host, want] of [['evil host', 'evil.example.com', 403], ['localhost ok', 'localhost', 404]]) {
-  const r = await rawGet(`${base}?p=${encodeURIComponent(BRIDGE_DIR + '\\x.png')}`, host)
+  const r = await rawGet(`${base}?p=${encodeURIComponent(join(BRIDGE_DIR, 'x.png'))}`, host)
   const ok = r.status === want
   if (!ok) allOk = false
   console.log(`${ok ? 'PASS' : 'FAIL'} | route | ${label}: status=${r.status} (want ${want})`)
