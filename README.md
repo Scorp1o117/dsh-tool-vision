@@ -81,6 +81,7 @@ Or load it from a local path without npm:
 | `multimodalModels` | `[]` | Model list (comma-separated). Each entry is matched case-insensitively against the full id, its bare id after the last `/`, and `provider/id`, with `*` / `?` globs (`*vl*`, `deepseek/*`). What the list *means* is set by the mode below. |
 | `multimodalListMode` | `whitelist` | **List mode (v0.9.0).** `whitelist`: listed models receive image blocks directly (the historical behaviour). `blacklist`: listed models are forced through the bridge — the correction layer for a model that claims image support it does not have. `off`: the list is ignored. An unknown value falls back to `whitelist`. |
 | `autoDetectMultimodal` | `true` | **Auto-detect (v0.9.0).** Decide from the current route's own declared `inputModalities`, then combine with the list (whitelist unions, blacklist subtracts). On by default: a text-only route is bridged, a multimodal one is treated like a whitelist member and gets images directly. The declaration is always read *before* this plugin's admission wrap, so `bridgeAutoImage` can never feed its own claim back in as evidence. Set false for the hand-maintained "list only" behaviour. |
+| `probeResults` | `{}` | **Measured verdicts (v0.9.0):** `"provider/model" → "yes"`/`"no"`, written by the `vision_probe_model` tool — do not edit by hand. A measurement outranks a **declaration** (a real request beats a claim) but not `multimodalModels` (explicit human intent has the last word). |
 | `bridgePreview` | `true` | Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). |
 | `bridgePreviewScanIntervalMs` | `2000` | Fallback scan interval for the preview scanner (ms); `0` disables the fallback. |
 | `bridgePreviewHideHint` | `true` | Hide the bridged hint text once the preview image has loaded (kept on failure — safe degradation). |
@@ -317,6 +318,61 @@ dependency is missing is a false comfort. Install with
 Its reason to exist is specific: v0.9.0's first cut rendered the model list only
 into a native `<datalist>` — every server-side unit test passed while the panel
 looked completely dead. Nothing below the DOM can catch that class of bug.
+
+## Capability probe: `vision_probe_model` (v0.9.0)
+
+Every other signal here rests on what a model **says** about itself. This tool
+sends a real image to the route and reports what it **does** — the only
+ground truth in the plugin.
+
+```
+base = autoDetect ? route declares image : {}
+a measured verdict (if any) overrides base    measurement > claim
+a list hit (if any) overrides everything      human intent > measurement
+```
+
+**Why one request is not enough** (each of these was learned the hard way):
+
+- **Models guess.** One may answer "blue" to an orange square, so a probe asks
+  about **two different colors** and only passes a model that reads both.
+- **Reasoning models return empty `content`** when the thinking budget eats
+  `max_tokens`; the default is 2048 and the reader falls back to
+  `reasoning_content`.
+- **A control group is mandatory.** A text-only request runs first to prove the
+  route works at all; without it a 401 or a timeout would be misread as "cannot
+  see images" and push a perfectly good multimodal route back onto the bridge
+  **permanently**.
+- **An accepting endpoint is not an image-reading model.** Measured against a
+  real gateway: `meituan/LongCat-2.0:free` returned HTTP 200 for the image
+  request and answered `"I can't see any image."` Only an endpoint that
+  *actively rejects* the image part is a conclusive negative.
+
+So a probe ends in one of three verdicts: `yes` (control passed, both colors
+correct), `no` (the endpoint rejected the image part, or answered without
+reading it), or `unknown` (network, auth or protocol trouble — **never** turned
+into a capability claim).
+
+**How it gets a route's endpoint and credential** (no new configuration):
+`llm.listConfigurableProviders()` names the provider's settings namespace and
+path → `settings.get(ns)` resolves `baseURL`/`apiKeyEnv`/`api` →
+`credentials.resolve(apiKeyEnv)` yields the secret (`.value`) — the same path
+`dsh-llm-pi-ai` uses for a real call. Read-only, and neither the endpoint nor
+the key ever appears in a probe result.
+
+**Linking**: a verdict is written to `probeResults` and takes effect in the
+bridge decision **immediately** — `yes` sends images directly, `no` forces the
+bridge back on — regardless of the list mode. (That is also why it does not
+silently write into `multimodalModels`: a `blacklist` list means the *opposite*,
+so an automatic entry there would produce exactly the wrong result.) Each row in
+the panel's picker carries a badge:
+
+- `measured: reads images` / `measured: no image reading` (blue / red), shown in
+  preference to the declaration;
+- a never-probed route falls back to the `declares image` badge;
+- the current-route readout reports `measured (a real image was read / NOT read)`.
+
+> A route on an unknown protocol (e.g. `openai-responses`) returns `unknown`
+> with a reason, rather than guessing confidently with `chat/completions`.
 
 ## v0.8.0: master switch, and the save-path fix
 

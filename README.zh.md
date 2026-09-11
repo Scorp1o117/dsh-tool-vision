@@ -56,6 +56,7 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 | `multimodalModels` | `[]` | 模型名单（逗号分隔）。每项按「完整 id / 末段裸 id / `provider/id`」三种写法匹配，大小写不敏感，支持 `*` `?` 通配（如 `*vl*`、`deepseek/*`）。含义由下面的模式决定 |
 | `multimodalListMode` | `whitelist` | **名单模式（v0.9.0）**：`whitelist` 名单内模型直收图片块（旧行为）；`blacklist` 名单内模型强制走桥接（用来纠正"声明支持图片但实际不支持"的模型）；`off` 忽略名单。未知值一律回退 `whitelist` |
 | `autoDetectMultimodal` | `true` | **自动识别（v0.9.0）**：按当前路由自己声明的 `inputModalities` 判定，再与名单合成（白名单取并集、黑名单取差集）。默认开启＝识别到纯文本就交给桥接、识别到多模态就等同白名单成员直发图片；声明永远读"包装前"的真值，不会被 `bridgeAutoImage` 的假声明污染。设为 `false` 可退回"只认名单"的纯手工行为 |
+| `probeResults` | `{}` | **实测结果（v0.9.0）**：`"provider/model" → "yes"`/`"no"`，由 `vision_probe_model` 工具写入，不要手改。实测优先级**高于声明**（真实请求 > 自称），但**低于** `multimodalModels`（人的明确意图有最终话语权） |
 | `bridgePreview` | `true` | 桥接图片内联预览：用户气泡内显示缩略图，点击放大 |
 | `bridgePreviewScanIntervalMs` | `2000` | 预览兜底扫描间隔（毫秒）；`0` 关闭兜底 |
 | `bridgePreviewHideHint` | `true` | 图片加载成功后隐藏桥接提示文本（失败时保留，安全降级） |
@@ -206,6 +207,35 @@ npm run test:render  # 面板渲染测试（需要 devDependencies）
 它单独成命令、**不并入 `npm test`**：它需要 `react` / `react-dom` / `jsdom`，而一个"依赖缺失就静默跳过"的 DOM 测试只会带来虚假的安全感。需要时先 `npm i -D react@18 react-dom@18 jsdom`。
 
 它存在的理由很具体：v0.9.0 第一版把模型清单只渲染进原生 `<datalist>` —— 服务端单测**全绿**，面板却看起来完全没反应。这类 bug 在 DOM 之下根本抓不到。
+
+## 实测探测：`vision_probe_model`（v0.9.0）
+
+前面所有判定都建立在"模型**说自己**能不能看图"之上。这个工具改为**真的发一张图过去试**，是插件里唯一的地面真相。
+
+```
+base = autoDetect ? 路由声明含 image : ∅
+探测结果（若有）覆盖 base                  实测 > 自称
+名单命中（若有）覆盖一切                    人的意图 > 实测
+```
+
+**为什么一次请求不够**（都是实测踩出来的）：
+
+- **会瞎猜**：模型可能对橙色方块回答"blue"。所以探测跑**两个不同颜色**，两个都答对才算通过；
+- **推理模型会返回空 `content`**：思考预算不够时 `max_tokens` 全被烧光。默认给 2048，并回退读 `reasoning_content`；
+- **必须要有对照组**：先发一条纯文本请求确认"这条路本身是通的"，否则一个 401/超时会被误读成"它不能看图"——那会把一条好端端的多模态路由**永久**推回桥接；
+- **端点不报错 ≠ 能看图**。真实网关实测：`meituan/LongCat-2.0:free` 收到图片请求返回 200，但回答是 `"I can't see any image."`。只有"端点主动拒绝图片部分"才是确定性的负面信号。
+
+结论分三档：`yes`（对照组通过 + 两色全对）、`no`（端点拒绝图片，或答了但没读图）、`unknown`（网络/鉴权/协议问题——**绝不**当作能力结论）。
+
+**它怎么拿到主模型的端点与凭据**（不新增任何配置）：`llm.listConfigurableProviders()` 给出 provider 的 settings 命名空间与路径 → `settings.get(ns)` 读出 `baseURL`/`apiKeyEnv`/`api` → `credentials.resolve(apiKeyEnv)` 取出密钥（`.value`），与 `dsh-llm-pi-ai` 真实调用同一条路。只读，且**端点与密钥绝不出现在探测结果里**。
+
+**联动**：探测结果写入 `probeResults` 并**立即参与桥接判定**——`yes` 直接放行图片、`no` 强制回到桥接，且**与名单模式无关**。（这比"自动往名单里写一笔"更正确：名单在 `blacklist` 模式下含义是反的，自动写入会得到完全相反的效果。）面板清单里每个模型带徽章：
+
+- `已实测可看图` / `已实测不可看图`（蓝 / 红）——实测优先展示；
+- 没探测过的才回退显示声明的 `声明支持图片`；
+- 顶部"依据"栏显示 `实测（真实发图验证通过/未通过）`。
+
+> 未知协议的路由（如 `openai-responses`）会直接返回 `unknown` 并说明原因，而不是用 `chat/completions` 去猜一个自信的错误答案。
 
 ## v0.8.0：总开关，以及保存修复
 

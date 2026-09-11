@@ -49,6 +49,7 @@ window.__ModuleLoader__.load({
       ".__tv_catalog{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-tertiary);padding:6px 10px;border:1px dashed var(--dsw-alias-border-l2);border-radius:8px}" +
       ".__tv_badge{font-size:10px;border:1px solid var(--dsw-alias-border-l2);border-radius:4px;padding:0 4px;color:var(--dsw-alias-label-tertiary)}" +
       ".__tv_badgeOk{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}" +
+      ".__tv_badgeBad{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}" +
       ".__tv_link{background:none;border:none;font:inherit;font-size:11px;padding:0;cursor:pointer;color:var(--dsw-alias-state-business-primary)}" +
       ".__tv_link:disabled{opacity:.5;cursor:default}" +
       ".__tv_picker{display:flex;flex-direction:column;gap:4px}" +
@@ -98,6 +99,8 @@ window.__ModuleLoader__.load({
       catalogSourceWhitelist: "名单（白名单命中）",
       catalogSourceBlacklist: "名单（黑名单命中）",
       catalogSourceAuto: "自动识别（路由声明支持图片）",
+      catalogSourceProbeYes: "实测（真实发图验证通过）",
+      catalogSourceProbeNo: "实测（真实发图验证未通过）",
       catalogSourceDefault: "默认（未识别 → 桥接）",
       catalogSourceBridgeOff: "桥接已关闭",
       catalogSourceNoRoute: "无路由信息",
@@ -106,6 +109,9 @@ window.__ModuleLoader__.load({
       catalogFailed: "模型列表读取失败",
       catalogEmpty: "dsh 尚未配置任何模型",
       catalogImage: "声明支持图片",
+      catalogProbeYes: "已实测可看图",
+      catalogProbeNo: "已实测不可看图",
+      catalogProbeHint: "「实测」来自 vision_probe_model：向该路由真实发图验证过，比模型自己的声明更可靠。",
       catalogPickHint: "也可手填通配符，如 *vl*",
       catalogProviderError: "该 provider 的模型列表不可用",
       catalogCount: "个模型",
@@ -182,6 +188,8 @@ window.__ModuleLoader__.load({
       catalogSourceWhitelist: "list (whitelist hit)",
       catalogSourceBlacklist: "list (blacklist hit)",
       catalogSourceAuto: "auto-detect (route declares image)",
+      catalogSourceProbeYes: "measured (a real image was read)",
+      catalogSourceProbeNo: "measured (a real image was NOT read)",
       catalogSourceDefault: "default (unrecognised → bridged)",
       catalogSourceBridgeOff: "bridging is off",
       catalogSourceNoRoute: "no route information",
@@ -190,6 +198,9 @@ window.__ModuleLoader__.load({
       catalogFailed: "Could not read the model list",
       catalogEmpty: "dsh has no configured models",
       catalogImage: "declares image",
+      catalogProbeYes: "measured: reads images",
+      catalogProbeNo: "measured: no image reading",
+      catalogProbeHint: "\"Measured\" comes from vision_probe_model: a real image was sent to that route, which beats the model's own declaration.",
       catalogPickHint: "Or type a glob, e.g. *vl*",
       catalogProviderError: "this provider's model list is unavailable",
       catalogCount: "models",
@@ -601,7 +612,13 @@ window.__ModuleLoader__.load({
                       onChange: function () { toggleModel(entry); }
                     }),
                     h("span", { className: "__tv_itemId", title: entry.id }, entry.id),
-                    entry.image ? h("span", { className: "__tv_badge __tv_badgeOk" }, t("catalogImage")) : null,
+                    entry.probe === "yes"
+                      ? h("span", { className: "__tv_badge __tv_badgeOk", title: t("catalogProbeHint") }, t("catalogProbeYes"))
+                      : entry.probe === "no"
+                        ? h("span", { className: "__tv_badge __tv_badgeBad", title: t("catalogProbeHint") }, t("catalogProbeNo"))
+                        : entry.image
+                          ? h("span", { className: "__tv_badge __tv_badgeOk" }, t("catalogImage"))
+                          : null,
                     entry.name && entry.name !== entry.id
                       ? h("span", { className: "__tv_itemName" }, entry.name)
                       : null
@@ -733,6 +750,8 @@ window.__ModuleLoader__.load({
         whitelist: "catalogSourceWhitelist",
         blacklist: "catalogSourceBlacklist",
         auto: "catalogSourceAuto",
+        "probe-yes": "catalogSourceProbeYes",
+        "probe-no": "catalogSourceProbeNo",
         "bridge-off": "catalogSourceBridgeOff",
         "no-route": "catalogSourceNoRoute"
       }[source] || "catalogSourceDefault";

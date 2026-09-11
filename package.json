@@ -5,7 +5,7 @@
     "type": "module",
     "main": "index.js",
     "scripts": {
-        "test": "node tests/preview-regex.test.mjs && node tests/preview-route.test.mjs && node tests/auto-image.test.mjs && node --test tests/vision-tools.test.js tests/vision-tools-tools.test.js && node --test tests/settings-scope-compat.test.mjs tests/settings-atomic-write.test.mjs tests/switch-behaviour.test.mjs tests/model-lists.test.mjs",
+        "test": "node tests/preview-regex.test.mjs && node tests/preview-route.test.mjs && node tests/auto-image.test.mjs && node --test tests/vision-tools.test.js tests/vision-tools-tools.test.js && node --test tests/settings-scope-compat.test.mjs tests/settings-atomic-write.test.mjs tests/switch-behaviour.test.mjs tests/model-lists.test.mjs tests/model-probe.test.mjs",
         "test:render": "node tests/render-panel.test.mjs"
     },
     "exports": {

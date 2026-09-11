@@ -27,6 +27,8 @@ import {
   modelListMatches,
   modelListMatchEntries,
   normalizeListMode,
+  probeKey,
+  probeVerdict,
   registerModelCatalogRoute,
   unwrappedResolveModelInfo,
   warnAutoPromotion,
@@ -350,6 +352,7 @@ test('the route marks the models the CURRENT list addresses', async () => {
     image: true,
     listed: true,
     matchedEntries: ['mimo-v2.5'],
+    probe: null,
   })
   assert.equal(models[1].listed, false, 'an unlisted model must not look ticked')
   assert.deepEqual(models[1].matchedEntries, [])
@@ -357,6 +360,66 @@ test('the route marks the models the CURRENT list addresses', async () => {
   // different list than the one the bridge is using.
   assert.deepEqual(payload.list, ['mimo-v2.5', 'nope'])
   assert.equal(payload.listMode, 'blacklist')
+})
+
+// ── measured verdicts (v0.9.0 probe) ────────────────────────────────────────
+test('probeVerdict only answers for routes that were actually measured', () => {
+  const config = cfg({ probeResults: { 'commandcode/xiaomi/mimo-v2.5': 'yes', 'opencodego/deepseek-v4-flash': 'no' } })
+  assert.equal(probeVerdict(config, 'commandcode', 'xiaomi/mimo-v2.5'), 'yes')
+  assert.equal(probeVerdict(config, 'opencodego', 'deepseek-v4-flash'), 'no')
+  assert.equal(probeVerdict(config, 'commandcode', 'other'), undefined, 'unprobed is not a verdict')
+  assert.equal(probeVerdict(cfg(), 'p', 'm'), undefined, 'default config has no measurements')
+  // A hand-edited settings.yaml must not be able to inject a decision.
+  for (const junk of ['maybe', '', 'YES', true, 1, null]) {
+    assert.equal(probeVerdict(cfg({ probeResults: { 'p/m': junk } }), 'p', 'm'), undefined, `junk: ${String(junk)}`)
+  }
+  // The key is provider-qualified: the same id can be served by two gateways.
+  assert.equal(probeVerdict(config, 'other', 'xiaomi/mimo-v2.5'), undefined)
+  assert.equal(probeKey('p', 'm'), 'p/m')
+  assert.equal(probeKey(undefined, 'm'), '/m')
+})
+
+test('a measured verdict outranks the declaration, in BOTH directions', async () => {
+  // Measured yes: promoted even though the route says text-only. This is the
+  // blind spot the whitelist used to cover by hand.
+  const yes = cfg({ probeResults: { 'p/m': 'yes' } })
+  assert.equal(await currentModelAcceptsImage(agent('p', 'm'), yes, llmDeclaring(['text'])), true)
+  assert.equal(lastModelDecision.source, 'probe-yes')
+  // Measured no: demoted even though the route claims image input.
+  const no = cfg({ probeResults: { 'p/m': 'no' } })
+  assert.equal(await currentModelAcceptsImage(agent('p', 'm'), no, llmDeclaring(['text', 'image'])), false)
+  assert.equal(lastModelDecision.source, 'probe-no')
+})
+
+test('the human list keeps the last word over a measurement', async () => {
+  // A person who names a model outranks an automated measurement — that is the
+  // whole point of keeping the list explicit.
+  const probed = cfg({ probeResults: { 'p/m': 'no' }, multimodalModels: ['m'], multimodalListMode: 'whitelist' })
+  assert.equal(await currentModelAcceptsImage(agent('p', 'm'), probed, llmDeclaring(['text'])), true)
+  assert.equal(lastModelDecision.source, 'whitelist')
+  const blacklisted = cfg({ probeResults: { 'p/m': 'yes' }, multimodalModels: ['m'], multimodalListMode: 'blacklist' })
+  assert.equal(await currentModelAcceptsImage(agent('p', 'm'), blacklisted, llmDeclaring(['text', 'image'])), false)
+  assert.equal(lastModelDecision.source, 'blacklist')
+})
+
+test('a measurement works with auto-detection switched off', async () => {
+  // Probing is its own signal, so it must not depend on the declaration path.
+  const config = cfg({ autoDetectMultimodal: false, probeResults: { 'p/m': 'yes' } })
+  assert.equal(await currentModelAcceptsImage(agent('p', 'm'), config, undefined), true)
+})
+
+test('the catalog route reports each model\'s measurement', async () => {
+  const config = cfg({
+    probeResults: { 'commandcode/xiaomi/mimo-v2.5': 'yes', 'commandcode/meituan/LongCat-2.0:free': 'no' },
+  })
+  const { route } = mountRoute({ llm: happyLlm, config })
+  const res = makeRes()
+  await route.handler({ headers: { host: 'localhost' } }, res)
+  const payload = JSON.parse(res.body)
+  const [mimo, longcat] = payload.providers[0].models
+  assert.equal(mimo.probe, 'yes')
+  assert.equal(longcat.probe, 'no', 'a negative measurement must be visible, not hidden')
+  assert.equal(payload.probeResults['commandcode/xiaomi/mimo-v2.5'], 'yes')
 })
 
 test('the route still answers without a config getter', async () => {

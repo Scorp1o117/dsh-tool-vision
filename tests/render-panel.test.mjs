@@ -107,6 +107,9 @@ const catalogConfig = {
   multimodalModels: ['mimo-v2.5'],
   multimodalListMode: 'whitelist',
   autoDetectMultimodal: true,
+  // One measured-yes and one measured-no, so the panel must render both states
+  // and distinguish them from "never probed".
+  probeResults: { 'commandcode/xiaomi/mimo-v2.5': 'yes', 'commandcode/meituan/LongCat-2.0:free': 'no' },
 }
 // Seed the last decision the way a real step would, so the readout has
 // something true to render.
@@ -228,6 +231,17 @@ const boxes = document.querySelectorAll('.__tv_pickerList input[type=checkbox]')
 check('every rendered model has a checkbox', boxes.length === 3, `${boxes.length} boxes`)
 check('the listed model is ticked (matched via the bare id)', boxes[1]?.checked === true, `checked=${boxes[1]?.checked}`)
 check('an unlisted model is not ticked', boxes[0]?.checked === false && boxes[2]?.checked === false)
+
+// Measured verdicts must be visible AND distinguishable from a declaration —
+// the whole point of probing is that a claim and a measurement differ.
+check('a measured-yes route shows the measured badge', html.includes('catalogProbeYes'))
+check('a measured-no route shows the negative badge', html.includes('catalogProbeNo'))
+const rows = [...document.querySelectorAll('.__tv_item')]
+const badgeOf = (row) => [...row.querySelectorAll('.__tv_badge')].map((b) => b.textContent).join(',')
+check('the measured-no row does NOT still advertise a declaration',
+  badgeOf(rows[2]) === 'catalogProbeNo', `row="${badgeOf(rows[2])}"`)
+check('an unprobed route falls back to the declaration badge',
+  badgeOf(rows[0]) === 'catalogImage', `row="${badgeOf(rows[0])}"`)
 
 // Toggling edits the ONE draft shared with the text field; Save persists it.
 // Asserting a write on click would encode the wrong contract — the picker and

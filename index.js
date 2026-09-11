@@ -54,6 +54,7 @@ import z from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { registerVisionTools, CONTENT_FILTER_RE } from "./lib/vision-tools.js";
 import { sessionHeaders } from "./lib/session-header.js";
+import { probeModelCapability, PROBE_MAX_TOKENS, PROBE_TIMEOUT_MS } from "./lib/model-probe.js";
 
 /** Cordis plugin name. */
 const name = "tool-vision";
@@ -177,6 +178,18 @@ const Config = z.object({
    * admission wrap can never feed its own claim back in as evidence.
    */
   autoDetectMultimodal: z.boolean().default(true),
+  /**
+   * Measured image capability per route (v0.9.0), keyed `"provider/model"` with
+   * the value `"yes"` or `"no"`. Written by the `vision_probe_model` tool,
+   * never by hand — the only entry in this schema that records what a route
+   * DOES rather than what it says.
+   *
+   * It outranks the route's own declaration, because a probe is a real request
+   * and a declaration is only a claim. It does NOT outrank `multimodalModels`:
+   * that list is explicit human intent, and a person who names a model
+   * deserves the last word over an automated measurement.
+   */
+  probeResults: z.dict(z.string()).default({}),
   /** Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). */
   bridgePreview: z.boolean().default(true),
   /** Fallback scan interval for the preview scanner in ms; 0 disables the periodic fallback. */
@@ -514,6 +527,10 @@ function registerModelCatalogRoute(ctx, logger, getConfig) {
               image: Array.isArray(model.inputModalities) && model.inputModalities.includes("image"),
               listed: matchedEntries.length > 0,
               matchedEntries,
+              // What the route was MEASURED doing, when anyone has probed it.
+              // `null` means "not probed", which the panel must render
+              // differently from a probe that came back negative.
+              probe: probeVerdict(cfg, id, modelId) ?? null,
             };
           });
         } catch (error) {
@@ -527,6 +544,7 @@ function registerModelCatalogRoute(ctx, logger, getConfig) {
         current: { ...lastModelDecision },
         list,
         listMode,
+        probeResults: typeof getConfig === "function" ? { ...(getConfig()?.probeResults ?? {}) } : {},
         providers,
       });
     },
@@ -657,14 +675,93 @@ async function routeDeclaresImage(llm, provider, model) {
 /** Routes already warned about, so the notice appears once per route. */
 const autoPromotionWarned = new Set();
 
+/** Registry key for one measured route. Provider-qualified: the same model id
+ * can be served by two gateways with different real capabilities. */
+function probeKey(provider, model) {
+  return `${typeof provider === "string" ? provider : ""}/${model}`;
+}
+
+/**
+ * The measured verdict for a route, or `undefined` when it was never probed.
+ * Anything other than the two recorded values (a hand-edited settings.yaml, a
+ * future format) reads as "not probed" rather than as a guess.
+ */
+function probeVerdict(config, provider, model) {
+  const results = config?.probeResults;
+  if (results === undefined || results === null || typeof model !== "string" || model.length === 0) {
+    return undefined;
+  }
+  const value = results[probeKey(provider, model)];
+  return value === "yes" || value === "no" ? value : undefined;
+}
+
+/**
+ * Resolve the endpoint and credential a route actually sends to, so a probe
+ * talks to the same place the model does instead of a copy of it.
+ *
+ * The pieces come from two seams that a plugin is allowed to read:
+ *  - `llm.listConfigurableProviders()` names the settings namespace and the
+ *    path a provider's profile lives at;
+ *  - `settings.get(ns)` resolves that profile (`baseURL`, `apiKeyEnv`, `api`);
+ *  - `credentials.resolve(ref)` turns `apiKeyEnv` into the secret itself
+ *    (`.value`), the same way `dsh-llm-pi-ai` does it for a real call.
+ *
+ * Read-only, and the secret never leaves this function's caller: the probe
+ * result records a verdict, never an endpoint or a key.
+ *
+ * @throws {Error} with a caller-facing reason when the route is unprobeable.
+ */
+async function resolveProbeTarget(ctx, provider, model) {
+  const llm = ctx.get("llm");
+  const settings = ctx.get("settings");
+  const credentials = ctx.get("credentials");
+  if (settings === undefined) {
+    throw new Error("the settings service is unavailable, so the route's endpoint cannot be read");
+  }
+  let entry;
+  try {
+    entry = (llm?.listConfigurableProviders?.() ?? []).find((candidate) => candidate?.provider === provider);
+  } catch {
+    /* an adapter that cannot describe its providers simply has no entry */
+  }
+  const settingsNs = entry?.settingsNs;
+  if (typeof settingsNs !== "string" || settingsNs.length === 0) {
+    throw new Error(
+      `provider "${provider}" does not publish a settings namespace, so its endpoint cannot be resolved for probing`,
+    );
+  }
+  let profile = settings.get(settingsNs);
+  const path = Array.isArray(entry.settingsPath) && entry.settingsPath.length > 0 ? entry.settingsPath : [provider];
+  for (const segment of path) profile = profile?.[segment];
+  if (profile === undefined || profile === null || typeof profile !== "object") {
+    throw new Error(`no stored profile for provider "${provider}" under "${settingsNs}"`);
+  }
+  const baseURL = typeof profile.baseURL === "string" && profile.baseURL.length > 0 ? profile.baseURL : undefined;
+  if (baseURL === undefined) {
+    throw new Error(`provider "${provider}" has no baseURL, so its endpoint cannot be probed`);
+  }
+  let apiKey;
+  const ref = profile.apiKeyEnv;
+  if (typeof ref === "string" && ref.length > 0) {
+    try {
+      const record = await credentials?.resolve?.(ref);
+      apiKey = typeof record?.value === "string" ? record.value : undefined;
+    } catch (error) {
+      throw new Error(`stored credential "${ref}" could not be read: ${String(error?.message ?? error)}`);
+    }
+  }
+  return { baseURL, apiKey, api: profile.api, model };
+}
+
 /**
  * One-time notice when a route receives images directly *only* because of its
  * own declaration (source `auto`). This is the one failure auto-detection
  * cannot rule out: if the declaration is wrong, the endpoint rejects the image
  * after the message is already durable, and the error alone does not say what
  * to change. Naming the escape hatch the first time it happens turns a
- * confusing 400 into a one-line fix. Read {@link lastModelDecision}; never
- * throws.
+ * confusing 400 into a one-line fix — and now names the probe too, which
+ * settles the question instead of asking the user to guess.
+ * Read {@link lastModelDecision}; never throws.
  */
 function warnAutoPromotion(logger) {
   const { provider, model, direct, source } = lastModelDecision;
@@ -673,8 +770,9 @@ function warnAutoPromotion(logger) {
   if (autoPromotionWarned.has(key)) return;
   autoPromotionWarned.add(key);
   logger?.warn?.(
-    `[tool-vision] "${model}" receives images directly because its route declares image input; ` +
-    `if the endpoint rejects them, list it in multimodalModels under multimodalListMode: blacklist`,
+    `[tool-vision] "${model}" receives images directly because its route declares image input, ` +
+    `which is unverified; run vision_probe_model to measure it, or list it in multimodalModels ` +
+    `under multimodalListMode: blacklist to force the bridge`,
   );
 }
 
@@ -706,11 +804,21 @@ async function currentModelAcceptsImage(agent, config, llm) {
   const base = config.autoDetectMultimodal
     ? await routeDeclaresImage(llm, provider, model)
     : false;
-  // `off` means the list carries no opinion at all — it is not "empty list
-  // under whitelist", it is "no list semantics", so nothing is forced.
-  const listed = mode !== "off" && modelListMatches(config.multimodalModels, provider, model);
   let direct = base;
   let source = base ? "auto" : "default";
+  // A measured verdict outranks the route's own claim: a probe is a real
+  // request, a declaration is only a statement. Both directions count, so a
+  // route that says "image" and answered without reading the pixels goes back
+  // to the bridge without anyone hunting for the right list entry.
+  const probed = probeVerdict(config, provider, model);
+  if (probed !== undefined) {
+    direct = probed === "yes";
+    source = probed === "yes" ? "probe-yes" : "probe-no";
+  }
+  // `off` means the list carries no opinion at all — it is not "empty list
+  // under whitelist", it is "no list semantics", so nothing is forced. The
+  // human list keeps the last word over both other signals.
+  const listed = mode !== "off" && modelListMatches(config.multimodalModels, provider, model);
   if (listed) {
     direct = mode !== "blacklist";
     source = mode === "blacklist" ? "blacklist" : "whitelist";
@@ -900,6 +1008,11 @@ function apply(ctx, config) {
   let current = config;
   let sourceGetter = null;
   const getConfig = () => (sourceGetter ? sourceGetter() : current);
+  // The registered settings scope, kept so tools can PERSIST what they measure.
+  // Null whenever no settings provider is mounted (composition-entry-only runs),
+  // in which case a probe still reports its verdict but cannot record it.
+  let settingsScope = null;
+  const getSettingsScope = () => settingsScope;
 
   // ── master switch: a child fiber owns every registration ──────────────────
   // `ctx.tools.register`, `ctx.effect` and `ctx.on` are all effects on the fiber
@@ -1001,6 +1114,124 @@ function apply(ctx, config) {
         // (baseURL/apiKey/model). No provider chain, no local models, no extra
         // settings: everything comes from the existing tool-vision configuration.
               registerVisionTools(inner, getConfig);
+
+        // ── ground-truth capability probe (v0.9.0) ───────────────────────────
+        // Everything else decides from what a route SAYS; this measures what it
+        // DOES, and records the answer so the bridge decision stops guessing.
+        inner.tools.register(defineTool({
+          name: "vision_probe_model",
+          description:
+            "Measure whether a model's endpoint can actually read images, by sending it a real " +
+            "solid-color image and checking the answer. Use this when a model's declared image " +
+            "support is doubtful (it claims `image` but the provider may reject it, or it declares " +
+            "text-only yet the endpoint may accept images). Runs a text-only control request plus " +
+            "two different colors, so a model that merely guesses cannot pass. The verdict is " +
+            "recorded and from then on decides whether that route's images are sent directly or " +
+            "bridged. Costs a few requests against the model's own endpoint.",
+          parameters: {
+            model: {
+              type: "string",
+              required: true,
+              description: "Model id to probe, e.g. xiaomi/mimo-v2.5. Use the id exactly as dsh has it configured.",
+            },
+            provider: {
+              type: "string",
+              description:
+                "Provider route serving the model (e.g. commandcode). Omit to use the current " +
+                "session's route, or to auto-select when exactly one provider offers the model.",
+            },
+          },
+          output: {
+            schema: { type: "string" },
+            render: (_args, value) => [{ type: "text", text: value }],
+          },
+          async execute(args, exec) {
+            const cfg = getConfig();
+            const requested = String(args.model ?? "").trim();
+            if (requested.length === 0) throw new Error("vision_probe_model: model is required");
+            const llm = inner.get("llm");
+
+            // Resolve which routes offer this model, so an omitted `provider`
+            // is still an exact choice rather than a guess.
+            let candidates = [];
+            try {
+              for (const entry of llm?.listProviders?.() ?? []) {
+                const id = entry?.id;
+                if (typeof id !== "string") continue;
+                const models = await llm.listModels(id).catch(() => []);
+                if ((models ?? []).some((model) => String(model?.id) === requested)) candidates.push(id);
+              }
+            } catch {
+              /* fall through to the route/argument fallbacks below */
+            }
+            let provider = typeof args.provider === "string" && args.provider.length > 0 ? args.provider : undefined;
+            if (provider === undefined) {
+              const here = currentRoute(exec?.agent);
+              if (candidates.length === 1) provider = candidates[0];
+              else if (here.model === requested && typeof here.provider === "string") provider = here.provider;
+              else if (candidates.length > 1) {
+                throw new Error(
+                  `vision_probe_model: "${requested}" is served by ${candidates.join(", ")}; pass provider explicitly`,
+                );
+              } else {
+                provider = here.provider;
+              }
+            }
+            if (typeof provider !== "string" || provider.length === 0) {
+              throw new Error(
+                `vision_probe_model: cannot tell which provider serves "${requested}"; pass provider explicitly`,
+              );
+            }
+
+            const target = await resolveProbeTarget(inner, provider, requested);
+            const outcome = await probeModelCapability(
+              {
+                baseURL: target.baseURL,
+                apiKey: target.apiKey,
+                api: target.api,
+                model: requested,
+                maxTokens: PROBE_MAX_TOKENS,
+                timeoutMs: Math.max(PROBE_TIMEOUT_MS, Number(cfg.timeoutMs) || 0),
+                headers: sessionHeaders(cfg, exec),
+              },
+              exec.signal,
+            );
+
+            const key = probeKey(provider, requested);
+            let recorded = "not recorded (no settings provider)";
+            if (outcome.support === "yes" || outcome.support === "no") {
+              const scope = getSettingsScope();
+              if (scope !== null) {
+                try {
+                  await scope.update({ probeResults: { ...(cfg.probeResults ?? {}), [key]: outcome.support } });
+                  recorded = `recorded as "${outcome.support}"`;
+                } catch (error) {
+                  recorded = `could not be recorded: ${String(error?.message ?? error)}`;
+                }
+              }
+            }
+
+            const verdictText = outcome.support === "yes"
+              ? "SUPPORTS images"
+              : outcome.support === "no"
+                ? "does NOT read images"
+                : "INCONCLUSIVE (the route could not be probed)";
+            const effect = outcome.support === "yes"
+              ? "images will be sent to it directly"
+              : outcome.support === "no"
+                ? "images will be bridged to inspect_image hints"
+                : "the existing list/declaration rules still apply";
+            const evidence = Object.entries(outcome.evidence ?? {})
+              .map(([name, value]) => `  ${name}: ${value}`)
+              .join("\n");
+            return [
+              `${provider}/${requested}: ${verdictText}`,
+              `  ${outcome.detail}`,
+              `  ${recorded}; ${effect}`,
+              evidence ? `  evidence:\n${evidence}` : "",
+            ].filter(Boolean).join("\n");
+          },
+        }));
       },
     });
   }
@@ -1034,8 +1265,10 @@ function apply(ctx, config) {
   ctx.inject(["settings"], (sctx) => {
     const scope = sctx.settings.register(NS, Config, { base: config });
     sourceGetter = () => scope.get();
+    settingsScope = scope;
     sctx.effect(() => () => {
       sourceGetter = null;
+      settingsScope = null;
     });
     // Hot-apply: `enabled` switches the child fiber, and any field that gates a
     // registration re-installs it, so none of them needs a dsh restart anymore.
@@ -1087,9 +1320,12 @@ export {
   name,
   normalizeListMode,
   parseQuery,
+  probeKey,
+  probeVerdict,
   registerBridgePreviewRoute,
   registerModelCatalogRoute,
   repairLoggedImages,
+  resolveProbeTarget,
   routeDeclaresImage,
   unwrappedResolveModelInfo,
   warnAutoPromotion,
