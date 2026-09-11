@@ -1,3 +1,7 @@
 node_modules/
 *.tgz
+# This package ships no lockfile: the library itself has one dependency and CI
+# only scans for a BOM, so a lockfile would only pin the optional dev
+# dependencies of `npm run test:render`. Consumers resolve their own.
+package-lock.json
 

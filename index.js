@@ -455,7 +455,7 @@ function registerBridgePreviewRoute(ctx, exportDir, logger) {
  * `no-store`, and no credentials or endpoints in the payload — provider ids,
  * model ids/names and one boolean each.
  */
-function registerModelCatalogRoute(ctx, logger) {
+function registerModelCatalogRoute(ctx, logger, getConfig) {
   const webServer = ctx.get("webServer");
   if (webServer === undefined) {
     logger?.warn?.("[tool-vision] webServer unavailable; model catalog route not registered");
@@ -482,6 +482,12 @@ function registerModelCatalogRoute(ctx, logger) {
         send(503, { error: "llm service unavailable" });
         return;
       }
+      // `listed` is computed HERE, with the same matcher the bridge itself
+      // uses, so the panel never reimplements the rule (and can never
+      // disagree with the decision it is describing).
+      const cfg = typeof getConfig === "function" ? getConfig() : undefined;
+      const list = Array.isArray(cfg?.multimodalModels) ? cfg.multimodalModels : [];
+      const listMode = normalizeListMode(cfg?.multimodalListMode);
       let routes = [];
       try {
         routes = llm.listProviders() ?? [];
@@ -499,19 +505,30 @@ function registerModelCatalogRoute(ctx, logger) {
         };
         try {
           const models = await llm.listModels(id);
-          record.models = (models ?? []).slice(0, MODEL_CATALOG_MAX_PER_PROVIDER).map((model) => ({
-            id: String(model.id),
-            name: typeof model.name === "string" && model.name.length > 0 ? model.name : String(model.id),
-            image: Array.isArray(model.inputModalities) && model.inputModalities.includes("image"),
-          }));
+          record.models = (models ?? []).slice(0, MODEL_CATALOG_MAX_PER_PROVIDER).map((model) => {
+            const modelId = String(model.id);
+            const matchedEntries = modelListMatchEntries(list, id, modelId);
+            return {
+              id: modelId,
+              name: typeof model.name === "string" && model.name.length > 0 ? model.name : modelId,
+              image: Array.isArray(model.inputModalities) && model.inputModalities.includes("image"),
+              listed: matchedEntries.length > 0,
+              matchedEntries,
+            };
+          });
         } catch (error) {
           // One broken route must never blank the whole panel: report it and
-          // keep going, so the other providers still autocomplete.
+          // keep going, so the other providers still list.
           record.error = String(error?.message ?? error);
         }
         providers.push(record);
       }
-      send(200, { current: { ...lastModelDecision }, providers });
+      send(200, {
+        current: { ...lastModelDecision },
+        list,
+        listMode,
+        providers,
+      });
     },
   }), "dsh-tool-vision: model catalog route");
 }
@@ -556,19 +573,30 @@ function listEntryRegExp(entry) {
  * addresses every variant of one family. Exported for unit testing.
  */
 function modelListMatches(patterns, provider, model) {
-  if (!Array.isArray(patterns) || patterns.length === 0) return false;
-  if (typeof model !== "string" || model.length === 0) return false;
+  return modelListMatchEntries(patterns, provider, model).length > 0;
+}
+
+/**
+ * The list entries that address this route. The panel needs *which* entry hit
+ * so that unchecking a model removes exactly the entry responsible — matching
+ * `mimo-v2.5` against `xiaomi/mimo-v2.5` must not leave an orphan behind, and
+ * must not delete an unrelated entry either. Exported for unit testing.
+ */
+function modelListMatchEntries(patterns, provider, model) {
+  if (!Array.isArray(patterns) || patterns.length === 0) return [];
+  if (typeof model !== "string" || model.length === 0) return [];
   const slash = model.lastIndexOf("/");
   const candidates = [model, slash === -1 ? model : model.slice(slash + 1)];
   if (typeof provider === "string" && provider.length > 0) candidates.push(`${provider}/${model}`);
+  const hits = [];
   for (const raw of patterns) {
     if (raw === undefined || raw === null) continue;
     const entry = String(raw).trim();
     if (entry.length === 0) continue;
     const re = listEntryRegExp(entry);
-    if (candidates.some((candidate) => re.test(candidate))) return true;
+    if (candidates.some((candidate) => re.test(candidate))) hits.push(String(raw));
   }
-  return false;
+  return hits;
 }
 
 /**
@@ -1024,7 +1052,7 @@ function apply(ctx, config) {
   // mounted — and a section whose list field cannot autocomplete is a section
   // you cannot configure before switching the plugin on. Registered here so it
   // outlives `enabled: false`; read-only and secret-free by construction.
-  registerModelCatalogRoute(ctx, ctx.logger);
+  registerModelCatalogRoute(ctx, ctx.logger, getConfig);
 
   // No settings provider: the composition entry is the whole configuration.
   syncFeatures();
@@ -1055,6 +1083,7 @@ export {
   installAutoImageAdmission,
   lastModelDecision,
   modelListMatches,
+  modelListMatchEntries,
   name,
   normalizeListMode,
   parseQuery,

@@ -25,6 +25,7 @@ import {
   installAutoImageAdmission,
   lastModelDecision,
   modelListMatches,
+  modelListMatchEntries,
   normalizeListMode,
   registerModelCatalogRoute,
   unwrappedResolveModelInfo,
@@ -58,7 +59,7 @@ test('the catalog route is registered on the plugin fiber, not the feature fiber
   // A section whose list field cannot autocomplete while the switch is off
   // would be unconfigurable — the route must outlive `enabled: false`.
   assert.ok(server.includes(`const MODEL_CATALOG_ROUTE = "${MODEL_CATALOG_ROUTE}"`))
-  assert.ok(server.includes('registerModelCatalogRoute(ctx, ctx.logger)'))
+  assert.ok(server.includes('registerModelCatalogRoute(ctx, ctx.logger, getConfig)'))
   assert.ok(!server.includes('registerModelCatalogRoute(inner'), 'must not live on the disposable feature fiber')
   const exportsBlock = server.split('export {')[1] ?? ''
   for (const name of ['registerModelCatalogRoute', 'modelListMatches', 'normalizeListMode', 'lastModelDecision']) {
@@ -267,7 +268,7 @@ function makeRes() {
   }
 }
 
-function mountRoute({ llm, webServer, logger } = {}) {
+function mountRoute({ llm, webServer, logger, config } = {}) {
   const routes = []
   const warnings = []
   const ctx = {
@@ -279,7 +280,7 @@ function mountRoute({ llm, webServer, logger } = {}) {
     effect(fn) { const disposer = fn(); return () => { if (typeof disposer === 'function') disposer() } },
     logger: logger ?? { warn: (m) => warnings.push(m), debug() {}, info() {} },
   }
-  registerModelCatalogRoute(ctx, ctx.logger)
+  registerModelCatalogRoute(ctx, ctx.logger, config === undefined ? undefined : () => config)
   return { route: routes[0], routes, warnings }
 }
 
@@ -313,10 +314,59 @@ test('catalog route returns the configured models with declared capabilities', a
     ['meituan/LongCat-2.0:free', false],
   ])
   assert.equal(payload.providers[0].name, 'GOAT')
-  // One broken route degrades to an error note; the rest still autocomplete.
+  // One broken route degrades to an error note; the rest still list.
   assert.deepEqual(payload.providers[1].models, [])
   assert.match(payload.providers[1].error, /catalog exploded/)
   assert.ok('current' in payload, 'the panel reads the last decision from here')
+})
+
+test('modelListMatchEntries names the entries responsible, so unchecking is exact', () => {
+  const model = 'xiaomi/mimo-v2.5'
+  assert.deepEqual(modelListMatchEntries(['mimo-v2.5'], 'commandcode', model), ['mimo-v2.5'])
+  assert.deepEqual(modelListMatchEntries(['*mimo*', 'mimo-v2.5'], 'commandcode', model), ['*mimo*', 'mimo-v2.5'])
+  assert.deepEqual(modelListMatchEntries(['other', 'xiaomi/*'], 'commandcode', model), ['xiaomi/*'])
+  assert.deepEqual(modelListMatchEntries(['MIMO-V2.5'], 'commandcode', model), ['MIMO-V2.5'])
+  assert.deepEqual(modelListMatchEntries([], 'commandcode', model), [])
+  assert.deepEqual(modelListMatchEntries(['other'], 'commandcode', model), [])
+  // The removal key must be the entry AS STORED (a glob stays a glob); trim
+  // only normalizes the comparison, never the value handed back to the editor.
+  assert.deepEqual(modelListMatchEntries(['  mimo-v2.5  '], 'commandcode', model), ['  mimo-v2.5  '])
+  // A bare id in the list must not be reported as a hit for a NESTED id's
+  // trailing segment on an unrelated model.
+  assert.deepEqual(modelListMatchEntries(['mimo-v2.5'], 'commandcode', 'xiaomi/other-vl'), [])
+})
+
+test('the route marks the models the CURRENT list addresses', async () => {
+  const config = cfg({ multimodalModels: ['mimo-v2.5', 'nope'], multimodalListMode: 'blacklist' })
+  const { route } = mountRoute({ llm: happyLlm, config })
+  const res = makeRes()
+  await route.handler({ headers: { host: 'localhost' } }, res)
+  const payload = JSON.parse(res.body)
+  const models = payload.providers[0].models
+  // The bare entry hits the qualified route — the very fix v0.9.0 is about.
+  assert.deepEqual(models[0], {
+    id: 'xiaomi/mimo-v2.5',
+    name: 'MiMo V2.5',
+    image: true,
+    listed: true,
+    matchedEntries: ['mimo-v2.5'],
+  })
+  assert.equal(models[1].listed, false, 'an unlisted model must not look ticked')
+  assert.deepEqual(models[1].matchedEntries, [])
+  // The panel mirrors the live list and mode so a tick can never describe a
+  // different list than the one the bridge is using.
+  assert.deepEqual(payload.list, ['mimo-v2.5', 'nope'])
+  assert.equal(payload.listMode, 'blacklist')
+})
+
+test('the route still answers without a config getter', async () => {
+  const { route } = mountRoute({ llm: happyLlm })
+  const res = makeRes()
+  await route.handler({ headers: { host: 'localhost' } }, res)
+  const payload = JSON.parse(res.body)
+  assert.equal(payload.providers[0].models[0].listed, false)
+  assert.deepEqual(payload.list, [])
+  assert.equal(payload.listMode, 'whitelist', 'no config → the packaged default')
 })
 
 test('catalog route mirrors the last decision and is loopback-only', async () => {

@@ -51,6 +51,14 @@ window.__ModuleLoader__.load({
       ".__tv_badgeOk{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}" +
       ".__tv_link{background:none;border:none;font:inherit;font-size:11px;padding:0;cursor:pointer;color:var(--dsw-alias-state-business-primary)}" +
       ".__tv_link:disabled{opacity:.5;cursor:default}" +
+      ".__tv_picker{display:flex;flex-direction:column;gap:4px}" +
+      ".__tv_pickerHead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--dsw-alias-label-tertiary)}" +
+      ".__tv_pickerList{max-height:230px;overflow-y:auto;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-3);padding:4px}" +
+      ".__tv_group{font-size:10px;font-weight:600;color:var(--dsw-alias-label-tertiary);padding:6px 6px 2px;text-transform:none}" +
+      ".__tv_item{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--dsw-alias-label-primary)}" +
+      ".__tv_item:hover{background:var(--dsw-alias-bg-layer-2)}" +
+      ".__tv_itemId{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+      ".__tv_itemName{color:var(--dsw-alias-label-tertiary);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%}" +
       ".__tv_unavailable{font-size:13px;color:var(--dsw-alias-label-tertiary)}";
     var tagId = "dsh-tool-vision/main.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
@@ -98,8 +106,15 @@ window.__ModuleLoader__.load({
       catalogFailed: "模型列表读取失败",
       catalogEmpty: "dsh 尚未配置任何模型",
       catalogImage: "声明支持图片",
-      catalogPickHint: "从 dsh 已配置的模型中选择，或手填通配符",
+      catalogPickHint: "也可手填通配符，如 *vl*",
       catalogProviderError: "该 provider 的模型列表不可用",
+      catalogCount: "个模型",
+      catalogPick: "点击勾选加入名单",
+      catalogCurrentList: "当前名单",
+      catalogListEmpty: "（空）",
+      catalogUnsaved: "未保存",
+      catalogModeOff: "名单模式为“关闭”，勾选不会影响判定",
+      catalogNoMatch: "没有匹配的模型",
       fieldBaseUrl: "API Base URL",
       fieldApiKey: "API Key",
       fieldApiKeyEnv: "API Key 环境变量（apiKey 为空时读取）",
@@ -175,8 +190,15 @@ window.__ModuleLoader__.load({
       catalogFailed: "Could not read the model list",
       catalogEmpty: "dsh has no configured models",
       catalogImage: "declares image",
-      catalogPickHint: "Pick from the models dsh has configured, or type a glob",
+      catalogPickHint: "Or type a glob, e.g. *vl*",
       catalogProviderError: "this provider's model list is unavailable",
+      catalogCount: "models",
+      catalogPick: "Click to add to the list",
+      catalogCurrentList: "Current list",
+      catalogListEmpty: "(empty)",
+      catalogUnsaved: "unsaved",
+      catalogModeOff: "List mode is Off — ticking has no effect on the decision",
+      catalogNoMatch: "no matching models",
       fieldBaseUrl: "API Base URL",
       fieldApiKey: "API Key",
       fieldApiKeyEnv: "API key env var (read when apiKey is empty)",
@@ -485,8 +507,112 @@ window.__ModuleLoader__.load({
         });
       }
 
+      // The two field specs the picker binds to. Looked up rather than
+      // hard-coded keys, so renaming a field in FIELDS cannot silently detach
+      // the picker from the setting it edits.
+      var modelListField = null;
+      var modeField = null;
+      FIELDS.forEach(function (f) {
+        if (f.type === "modellist") modelListField = f;
+        if (f.key === "multimodalListMode") modeField = f;
+      });
+
       var current = (catalog && catalog.current) || {};
       var catalogOptions = buildCatalogOptions(catalog, t);
+
+      /**
+       * The list as the draft sees it, split into entries. The picker edits
+       * this array, not the raw text, so a model id that happens to contain a
+       * comma can never be mangled by the text field's separator.
+       */
+      function listEntries() {
+        return String(fieldDraft(modelListField)).split(",")
+          .map(function (s) { return s.trim(); })
+          .filter(Boolean);
+      }
+      function writeList(entries) {
+        setDraft(function (prev) {
+          var next = Object.assign({}, prev);
+          next[modelListField.key] = draftToCsv(entries);
+          return next;
+        });
+        setNotice(null);
+        setError(null);
+      }
+      /** Toggle one model: add the FULL id, or remove exactly the entries that hit. */
+      function toggleModel(entry) {
+        var entries = listEntries();
+        if (entry.listed) {
+          var drop = entry.matchedEntries || [];
+          writeList(entries.filter(function (e) { return drop.indexOf(e) === -1; }));
+          return;
+        }
+        if (entries.indexOf(entry.id) === -1) entries.push(entry.id);
+        writeList(entries);
+      }
+
+      function renderPicker() {
+        if (!modelListField) return null;
+        var providers = (catalog && Array.isArray(catalog.providers) ? catalog.providers : [])
+          .filter(function (p) { return Array.isArray(p.models) && p.models.length > 0; });
+        var broken = (catalog && Array.isArray(catalog.providers) ? catalog.providers : [])
+          .filter(function (p) { return p.error; });
+        var count = providers.reduce(function (total, p) { return total + p.models.length; }, 0);
+        var mode = String((modeField && fieldDraft(modeField)) || value.multimodalListMode || "whitelist");
+        // The picker and the text field edit ONE draft; this is the only signal
+        // that a tick is not persisted yet, so it must be visible.
+        var dirty = JSON.stringify(listEntries()) !== JSON.stringify(Array.isArray(value[modelListField.key]) ? value[modelListField.key] : []);
+        var head = h("div", { className: "__tv_pickerHead" },
+          h("span", null, catalogBusy
+            ? t("catalogLoading")
+            : catalog
+              ? count + " " + t("catalogCount") + " · " + t("catalogPick")
+              : t("catalogNoRoute")),
+          catalogError
+            ? h("span", { className: "__tv_error" }, t("catalogFailed") + "：" + catalogError)
+            : h("span", null, t("catalogCurrentList") + "：" + (listEntries().join(", ") || t("catalogListEmpty"))
+              + (dirty ? "（" + t("catalogUnsaved") + "）" : "")));
+        var notes = broken.map(function (p) {
+          return h("div", { key: "e:" + p.id, className: "__tv_hint" }, p.id + "：" + t("catalogProviderError") + "（" + p.error + "）");
+        });
+        if (!catalog) return h("div", { className: "__tv_picker" }, head);
+        if (count === 0) {
+          return h("div", { className: "__tv_picker" },
+            head,
+            h("div", { className: "__tv_hint" },
+              providers.length === 0 ? t("catalogEmpty") : t("catalogNoMatch")),
+            notes
+          );
+        }
+        return h("div", { className: "__tv_picker" },
+          head,
+          mode === "off" ? h("div", { className: "__tv_hint" }, t("catalogModeOff")) : null,
+          h("div", { className: "__tv_pickerList" },
+            providers.map(function (provider) {
+              return [
+                h("div", { key: "h:" + provider.id, className: "__tv_group" }, provider.id + " · " + provider.name),
+                provider.models.map(function (entry) {
+                  return h("label", { key: "m:" + provider.id + ":" + entry.id, className: "__tv_item" },
+                    h("input", {
+                      className: "__tv_check",
+                      type: "checkbox",
+                      checked: Boolean(entry.listed),
+                      disabled: !snapshot.writable,
+                      onChange: function () { toggleModel(entry); }
+                    }),
+                    h("span", { className: "__tv_itemId", title: entry.id }, entry.id),
+                    entry.image ? h("span", { className: "__tv_badge __tv_badgeOk" }, t("catalogImage")) : null,
+                    entry.name && entry.name !== entry.id
+                      ? h("span", { className: "__tv_itemName" }, entry.name)
+                      : null
+                  );
+                })
+              ];
+            })
+          ),
+          notes
+        );
+      }
 
       return h("div", { className: "__tv_root" },
         h("p", { className: "__tv_hint", style: { margin: "0 0 4px" } }, t("intro")),
@@ -507,7 +633,8 @@ window.__ModuleLoader__.load({
           current.model ? h("span", { className: "__tv_badge " + (current.direct ? "__tv_badgeOk" : "") },
             current.direct ? t("catalogDirect") : t("catalogBridged")) : null,
           current.model ? h("span", null, t("catalogSource") + "：" + sourceLabel(current.source, t)) : null,
-          h("button", { type: "button", className: "__tv_link", onClick: loadCatalog, disabled: catalogBusy }, t("catalogRefresh")),
+          h("button", { type: "button", className: "__tv_link", onClick: loadCatalog, disabled: catalogBusy },
+            catalogBusy ? t("catalogLoading") : t("catalogRefresh")),
           catalogError ? h("span", { className: "__tv_error" }, t("catalogFailed") + "：" + catalogError) : null),
         FIELDS.map(function (f) {
           var overridden = f.key in user;
@@ -553,7 +680,8 @@ window.__ModuleLoader__.load({
                 placeholder: t("catalogPickHint"),
                 onChange: function (e) { setField(f, e.target.value); }
               }),
-              hint
+              hint,
+              renderPicker()
             );
           }
           return h("label", { key: f.key, className: "__tv_field" },
@@ -612,10 +740,10 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One <option> per configured model, plus one for its bare id (so both
-     * `xiaomi/mimo-v2.5` and `mimo-v2.5` are one click away). The label carries
-     * the provider and whether the route DECLARES image input — the panel's
-     * only honest hint about which entries are plausible.
+     * One <option> per configured model, plus one for its bare id, so both
+     * `xiaomi/mimo-v2.5` and `mimo-v2.5` are reachable while typing. This is
+     * only the *typing* aid; the visible picker below is the primary UI,
+     * because a native datalist stays invisible until the user types.
      */
     function buildCatalogOptions(catalog, t) {
       var out = [];

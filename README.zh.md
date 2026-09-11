@@ -179,8 +179,12 @@ blacklist  → direct = base \ 名单        名单只做"减"
 
 **面板**（设置 → 视觉模型）：
 
-- 名单输入框带自动补全：候选项来自 dsh 已配置的模型（`llm.listProviders()` + `llm.listModels()`），每项标注它是否**声明**支持图片，也可以直接手打通配符；
+- 名单字段下面是一份**可直接勾选的模型清单**：候选来自 dsh 已配置的模型（`llm.listProviders()` + `llm.listModels()`），按 provider 分组，标注哪些**声明**支持图片；勾选加入、取消勾选移出，上方输入框仍可手打通配符（两者共用同一份草稿，改完按「保存」生效，未保存时清单头部会标"未保存"）；
 - 顶部常驻**当前路由判定**：`provider / model`、直发还是桥接、依据是什么（名单命中 / 自动识别 / 默认）。
+
+> 为什么不只用 `<datalist>`：原生 datalist **必须聚焦输入框并敲字才会弹出**，v0.9.0 第一版因此看起来像"面板没反应"。现在清单常驻可见，datalist 只作打字辅助。
+>
+> 取消勾选移除的是**命中的那条记录本身**（名单里写 `mimo-v2.5` 命中了 `xiaomi/mimo-v2.5`，取消勾选就移除 `mimo-v2.5`，不会凭空虚增一个完整 id）。"哪条命中了"由服务端用与桥接**同一套匹配器**算出（payload 的 `matchedEntries`），客户端不复制规则，所以面板显示的状态永远不会和实际判定打架。
 
 **判定依据的读取路径**（这是本版最容易做错的地方）：`autoDetectMultimodal` **必须**读 `resolveModelInfo` 被包装之前的真值，否则 `bridgeAutoImage` 给所有模型贴上的"支持图片"就成了自证。代码里由 `unwrappedResolveModelInfo()` 保证，并有专门的回归测试。
 
@@ -189,6 +193,19 @@ blacklist  → direct = base \ 名单        名单只做"减"
 > ⚠️ `inputModalities` 是**声明**，不是保证——profile 里常见"为了过准入检查而写 `input: [text, image]`"的纯文本模型。上游 `dsh-llm-pi-ai` 自己也把"未声明"一律当作纯文本，理由写在源码注释里：**两种误判的代价不对等**——少声明会在贴图前就拒绝并点名模型，多声明则会放行一张"上游中途拒收、而消息已经落盘"的图片。
 >
 > 所以自动识别是默认开启的，同时带三层兜底：① 某个路由**首次**因"仅凭自己的声明"被放行时，日志会打一条明确提示并点名怎么改；② 面板顶部常驻当前判定与依据；③ 把该模型写进 `multimodalModels` 并切到 `blacklist` 模式即可强制回到桥接。
+
+## 测试
+
+```bash
+npm test           # 服务端单测（不需要额外依赖）
+npm run test:render  # 面板渲染测试（需要 devDependencies）
+```
+
+`npm run test:render` 在 jsdom 里加载**真实客户端 bundle**、走**真实注册路径**（`apply` → `slots.register` → 组件），数据由**真实的服务端路由处理器**产出，最后断言真实 DOM 与真实的设置写入。
+
+它单独成命令、**不并入 `npm test`**：它需要 `react` / `react-dom` / `jsdom`，而一个"依赖缺失就静默跳过"的 DOM 测试只会带来虚假的安全感。需要时先 `npm i -D react@18 react-dom@18 jsdom`。
+
+它存在的理由很具体：v0.9.0 第一版把模型清单只渲染进原生 `<datalist>` —— 服务端单测**全绿**，面板却看起来完全没反应。这类 bug 在 DOM 之下根本抓不到。
 
 ## v0.8.0：总开关，以及保存修复
 

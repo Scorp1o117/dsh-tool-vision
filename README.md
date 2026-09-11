@@ -254,11 +254,23 @@ stops doing so).
 
 **In the panel** (Settings → Vision Model):
 
-- the list field autocompletes from the models dsh actually has configured
-  (`llm.listProviders()` + `llm.listModels()`), each labelled with whether the
-  route *declares* image input — and you can still type a glob by hand;
+- the list field is followed by a **clickable list of the models dsh actually has
+  configured** (`llm.listProviders()` + `llm.listModels()`), grouped by provider
+  and labelled with whether the route *declares* image input. Tick to add,
+  untick to remove; the text field above still takes globs by hand. Both edit the
+  *same* draft, persisted by Save — the picker head flags it as unsaved until then.
 - a **current route** readout shows `provider / model`, whether images go direct
   or through the bridge, and why (list hit / auto-detect / default).
+
+> Why not just a `<datalist>`: a native datalist stays invisible until the user
+> focuses the field and types, which made v0.9.0's first cut look like a dead
+> panel. The list is now always visible, with the datalist kept as a typing aid.
+>
+> Unticking removes **the entry that actually matched** — if `mimo-v2.5` in the
+> list is what covers `xiaomi/mimo-v2.5`, unticking drops `mimo-v2.5` rather than
+> inventing a full id. Which entry hit is computed server-side with the *same*
+> matcher the bridge uses (`matchedEntries` in the payload), so the panel can
+> never display a state that disagrees with the decision.
 
 **Read path (the easiest thing to get wrong here)**: `autoDetectMultimodal` MUST
 read the value from *before* `resolveModelInfo` was wrapped, or the "image
@@ -284,6 +296,27 @@ master switch's child fiber, so the panel keeps working while the plugin is off.
 > names the fix; (2) the panel always shows the current route, the decision and
 > the reason; (3) listing that model under `blacklist` mode forces the bridge
 > back on.
+
+## Tests
+
+```bash
+npm test             # server-side unit tests (no extra dependencies)
+npm run test:render  # panel render test (needs devDependencies)
+```
+
+`npm run test:render` loads the **real client bundle** in jsdom, drives the
+**real registration path** (`apply` → `slots.register` → the component), feeds it
+from the **real server route handler**, and asserts on the real DOM and the real
+settings writes.
+
+It is a separate command and deliberately **not part of `npm test`**: it needs
+`react` / `react-dom` / `jsdom`, and a DOM test that silently skips when a
+dependency is missing is a false comfort. Install with
+`npm i -D react@18 react-dom@18 jsdom`.
+
+Its reason to exist is specific: v0.9.0's first cut rendered the model list only
+into a native `<datalist>` — every server-side unit test passed while the panel
+looked completely dead. Nothing below the DOM can catch that class of bug.
 
 ## v0.8.0: master switch, and the save-path fix
 
