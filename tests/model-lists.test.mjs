@@ -20,6 +20,7 @@ import {
   Config,
   MODEL_CATALOG_ROUTE,
   MULTIMODAL_LIST_MODES,
+  autoPromotionWarned,
   currentModelAcceptsImage,
   installAutoImageAdmission,
   lastModelDecision,
@@ -27,6 +28,7 @@ import {
   normalizeListMode,
   registerModelCatalogRoute,
   unwrappedResolveModelInfo,
+  warnAutoPromotion,
 } from '../index.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -34,18 +36,22 @@ const server = readFileSync(join(root, 'index.js'), 'utf8')
 const client = readFileSync(join(root, 'client.js'), 'utf8')
 
 const cfg = (over = {}) => ({ ...Config({}), ...over })
+/** The exact configuration v0.8.1 behaved as: no detection, list means direct. */
+const legacyCfg = (over = {}) => cfg({ autoDetectMultimodal: false, multimodalListMode: 'whitelist', ...over })
 const agent = (provider, model) => ({ session: { requestHeader: () => ({ config: { provider, model } }) } })
 const llmDeclaring = (modalities) => ({
   resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model, inputModalities: modalities }),
 })
 
 // ── schema + wiring ─────────────────────────────────────────────────────────
-test('Config carries the v0.9.0 fields with backwards-compatible defaults', () => {
+test('Config carries the v0.9.0 fields', () => {
   assert.equal(Config.dict.multimodalListMode.meta.default, 'whitelist')
-  assert.equal(Config.dict.autoDetectMultimodal.meta.default, false)
+  assert.equal(Config.dict.autoDetectMultimodal.meta.default, true, 'detection drives the bridge by default')
   assert.deepEqual(Config.dict.multimodalModels.meta.default, [])
-  // The default pair must reproduce v0.8.1 exactly: no auto-detect, whitelist.
   assert.equal(normalizeListMode(Config({}).multimodalListMode), 'whitelist')
+  // "Off" must remain reachable: it is the behaviour every pre-0.9 config had.
+  const legacy = cfg({ autoDetectMultimodal: false, multimodalListMode: 'whitelist', multimodalModels: [] })
+  assert.equal(legacy.autoDetectMultimodal, false)
 })
 
 test('the catalog route is registered on the plugin fiber, not the feature fiber', () => {
@@ -148,6 +154,34 @@ test('unresolvable routes and disabled bridging', async () => {
   assert.equal(await currentModelAcceptsImage(agent('p', 'm'), config, throwing), false)
 })
 
+test('a route promoted only by its own declaration warns once, naming the escape hatch', async () => {
+  // Auto-detection can be wrong in exactly one direction, and this notice is
+  // what keeps that recoverable instead of mysterious.
+  autoPromotionWarned.clear()
+  const seen = []
+  const logger = { warn: (message) => seen.push(String(message)) }
+  const config = cfg()
+  await currentModelAcceptsImage(agent('commandcode', 'xiaomi/mimo-v2.5'), config, llmDeclaring(['text', 'image']))
+  warnAutoPromotion(logger)
+  warnAutoPromotion(logger)
+  assert.equal(seen.length, 1, 'once per route, not once per step')
+  assert.match(seen[0], /blacklist/, 'the escape hatch must be named')
+  assert.match(seen[0], /xiaomi\/mimo-v2\.5/, 'the offending route must be named')
+  await currentModelAcceptsImage(agent('commandcode', 'other/model'), config, llmDeclaring(['text', 'image']))
+  warnAutoPromotion(logger)
+  assert.equal(seen.length, 2, 'each route warns on its own account')
+  // Silence for decisions that are not promotions.
+  autoPromotionWarned.clear()
+  await currentModelAcceptsImage(agent('p', 'listed'), cfg({ multimodalModels: ['listed'] }), llmDeclaring(['text', 'image']))
+  warnAutoPromotion(logger)
+  assert.equal(seen.length, 2, 'a whitelist hit is not a promotion')
+  await currentModelAcceptsImage(agent('p', 'plain'), config, llmDeclaring(['text']))
+  warnAutoPromotion(logger)
+  assert.equal(seen.length, 2, 'a bridged route is not a promotion')
+  // A missing logger must never throw out of the bridge.
+  assert.doesNotThrow(() => warnAutoPromotion(undefined))
+})
+
 // ── the property the whole feature rests on ─────────────────────────────────
 test('auto-detection reads BEFORE the admission wrap, never its own claim', async () => {
   const llm = llmDeclaring(['text'])
@@ -178,23 +212,36 @@ test('unwrappedResolveModelInfo falls back to the live method when unwrapped', (
 })
 
 // ── v0.8.1 compatibility ────────────────────────────────────────────────────
-test('default config never un-bridges anything v0.8.1 bridged', async () => {
+test('v0.8.1 semantics hold: a listed model is never un-bridged', async () => {
   // Compatibility is one-directional on purpose. The new matcher is strictly
   // more permissive (bare ids, provider-qualified ids, globs), so no entry
-  // that used to force a model direct may stop doing so — and nothing that
-  // used to be bridged becomes direct except through the widening below.
+  // that used to force a model direct may stop doing so. Under the *shipped*
+  // default (detection on) a listing is still the strongest statement there is.
   const legacy = (config, model) => config.multimodalModels.includes(model)
   const models = ['mimo-v2.5', 'xiaomi/mimo-v2.5', 'deepseek/deepseek-v4.1-flash', 'meituan/LongCat-2.0:free']
   const lists = [[], ['mimo-v2.5'], ['xiaomi/mimo-v2.5'], ['other'], ['deepseek/deepseek-v4.1-flash', 'mimo-v2.5']]
   for (const model of models) {
     for (const list of lists) {
-      const config = cfg({ multimodalModels: list })
-      const now = await currentModelAcceptsImage(agent('commandcode', model), config)
-      if (legacy(config, model)) {
-        assert.equal(now, true, `listed model ${model} must stay direct with ${JSON.stringify(list)}`)
+      if (!legacy(legacyCfg({ multimodalModels: list }), model)) continue
+      for (const config of [legacyCfg({ multimodalModels: list }), cfg({ multimodalModels: list })]) {
+        assert.equal(
+          await currentModelAcceptsImage(agent('commandcode', model), config, llmDeclaring(['text'])),
+          true,
+          `listed model ${model} must stay direct with ${JSON.stringify(list)}`,
+        )
       }
     }
   }
+})
+
+test('the shipped default treats a detected multimodal model like a listed one', async () => {
+  const config = cfg()
+  assert.equal(config.autoDetectMultimodal, true, 'detection is part of the default decision, not an add-on')
+  assert.equal(await currentModelAcceptsImage(agent('p', 'm'), config, llmDeclaring(['text', 'image'])), true)
+  assert.equal(lastModelDecision.source, 'auto')
+  assert.equal(await currentModelAcceptsImage(agent('p', 'm'), config, llmDeclaring(['text'])), false)
+  assert.equal(lastModelDecision.source, 'default')
+  assert.equal(await currentModelAcceptsImage(agent('p', 'm'), config, undefined), false, 'unknown routes bridge')
 })
 
 test('the one deliberate widening: a bare id now addresses the qualified route', async () => {

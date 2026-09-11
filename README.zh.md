@@ -55,7 +55,7 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 | `bridgeExportDir` | 临时目录 | 桥接图片导出目录（`os.tmpdir()/dsh-vision-bridge`） |
 | `multimodalModels` | `[]` | 模型名单（逗号分隔）。每项按「完整 id / 末段裸 id / `provider/id`」三种写法匹配，大小写不敏感，支持 `*` `?` 通配（如 `*vl*`、`deepseek/*`）。含义由下面的模式决定 |
 | `multimodalListMode` | `whitelist` | **名单模式（v0.9.0）**：`whitelist` 名单内模型直收图片块（旧行为）；`blacklist` 名单内模型强制走桥接（用来纠正"声明支持图片但实际不支持"的模型）；`off` 忽略名单。未知值一律回退 `whitelist` |
-| `autoDetectMultimodal` | `false` | **自动识别（v0.9.0）**：按当前路由自己声明的 `inputModalities` 判定，再与名单合成（白名单取并集、黑名单取差集）。默认关闭＝行为与旧版一致；声明永远读"包装前"的真值，不会被 `bridgeAutoImage` 的假声明污染 |
+| `autoDetectMultimodal` | `true` | **自动识别（v0.9.0）**：按当前路由自己声明的 `inputModalities` 判定，再与名单合成（白名单取并集、黑名单取差集）。默认开启＝识别到纯文本就交给桥接、识别到多模态就等同白名单成员直发图片；声明永远读"包装前"的真值，不会被 `bridgeAutoImage` 的假声明污染。设为 `false` 可退回"只认名单"的纯手工行为 |
 | `bridgePreview` | `true` | 桥接图片内联预览：用户气泡内显示缩略图，点击放大 |
 | `bridgePreviewScanIntervalMs` | `2000` | 预览兜底扫描间隔（毫秒）；`0` 关闭兜底 |
 | `bridgePreviewHideHint` | `true` | 图片加载成功后隐藏桥接提示文本（失败时保留，安全降级） |
@@ -186,7 +186,9 @@ blacklist  → direct = base \ 名单        名单只做"减"
 
 候选项由插件自己的回环路由提供：`GET /plugins/dsh-tool-vision/models`（仅本机 Host、只读、`no-store`），只返回 provider/model id 与声明能力，**不含任何密钥或端点地址**。它挂在插件主 fiber 而非总开关的子 fiber 上，所以插件关闭时面板依然可用。
 
-> ⚠️ 诚实提醒：`inputModalities` 是**声明**，不是保证——profile 里常见"为了过准入检查而写 `input: [text, image]`"的纯文本模型。`autoDetectMultimodal` 因此默认关闭；开启后请把说谎的模型写进黑名单。
+> ⚠️ `inputModalities` 是**声明**，不是保证——profile 里常见"为了过准入检查而写 `input: [text, image]`"的纯文本模型。上游 `dsh-llm-pi-ai` 自己也把"未声明"一律当作纯文本，理由写在源码注释里：**两种误判的代价不对等**——少声明会在贴图前就拒绝并点名模型，多声明则会放行一张"上游中途拒收、而消息已经落盘"的图片。
+>
+> 所以自动识别是默认开启的，同时带三层兜底：① 某个路由**首次**因"仅凭自己的声明"被放行时，日志会打一条明确提示并点名怎么改；② 面板顶部常驻当前判定与依据；③ 把该模型写进 `multimodalModels` 并切到 `blacklist` 模式即可强制回到桥接。
 
 ## v0.8.0：总开关，以及保存修复
 

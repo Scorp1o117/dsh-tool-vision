@@ -156,20 +156,27 @@ const Config = z.object({
    */
   multimodalListMode: z.string().default("whitelist"),
   /**
-   * Let the current route's own declared `inputModalities` decide, without
-   * listing every model (v0.9.0). Off by default, because the declaration is
-   * only whatever the profile says: profiles routinely declare
+   * Let the current route's own declared `inputModalities` drive the bridge
+   * decision, so only the models that cannot see images get bridged (v0.9.0,
+   * **on by default**). This and `multimodalModels` are one decision, not two:
+   * the declaration forms the base set, and the list unions with it
+   * (whitelist) or subtracts from it (blacklist).
+   *
+   * The declaration is only whatever the profile — or the installed catalog —
+   * says, and it CAN be wrong: profiles sometimes declare
    * `input: [text, image]` just to pass the host admission gate, and a wrong
-   * "yes" here sends the image straight to an endpoint that rejects it — the
-   * harness's own text-model projection is already disabled by
-   * `bridgeAutoImage`, so nothing underneath would catch it. Turn it on when
-   * the routes you use tell the truth, and name the liars in
-   * `multimodalModels` under `blacklist` mode.
+   * "yes" sends the image straight to an endpoint that may reject it. The
+   * harness's own text-model projection is disabled by `bridgeAutoImage`, so
+   * nothing underneath catches that. Two things bound the damage: the first
+   * promotion of a route logs a notice naming the escape hatch
+   * ({@link warnAutoPromotion}), and naming that route in `multimodalModels`
+   * under `blacklist` mode forces the bridge back on. Set this to false to
+   * bridge everything the list does not name.
    *
    * The value is always read from the *unwrapped* `resolveModelInfo`, so the
    * admission wrap can never feed its own claim back in as evidence.
    */
-  autoDetectMultimodal: z.boolean().default(false),
+  autoDetectMultimodal: z.boolean().default(true),
   /** Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). */
   bridgePreview: z.boolean().default(true),
   /** Fallback scan interval for the preview scanner in ms; 0 disables the periodic fallback. */
@@ -619,6 +626,30 @@ async function routeDeclaresImage(llm, provider, model) {
   }
 }
 
+/** Routes already warned about, so the notice appears once per route. */
+const autoPromotionWarned = new Set();
+
+/**
+ * One-time notice when a route receives images directly *only* because of its
+ * own declaration (source `auto`). This is the one failure auto-detection
+ * cannot rule out: if the declaration is wrong, the endpoint rejects the image
+ * after the message is already durable, and the error alone does not say what
+ * to change. Naming the escape hatch the first time it happens turns a
+ * confusing 400 into a one-line fix. Read {@link lastModelDecision}; never
+ * throws.
+ */
+function warnAutoPromotion(logger) {
+  const { provider, model, direct, source } = lastModelDecision;
+  if (direct !== true || source !== "auto" || typeof model !== "string" || model.length === 0) return;
+  const key = `${typeof provider === "string" ? provider : ""}\u0000${model}`;
+  if (autoPromotionWarned.has(key)) return;
+  autoPromotionWarned.add(key);
+  logger?.warn?.(
+    `[tool-vision] "${model}" receives images directly because its route declares image input; ` +
+    `if the endpoint rejects them, list it in multimodalModels under multimodalListMode: blacklist`,
+  );
+}
+
 /**
  * Whether the session's current model may receive image blocks directly.
  *
@@ -714,6 +745,7 @@ function attachPreStepBridge(ctx, getConfig, exportDir) {
     if (!agent?.session) return decision;
     try {
       const acceptsImage = await currentModelAcceptsImage(agent, getConfig(), ctx.get("llm"));
+      warnAutoPromotion(ctx.logger);
       if (!acceptsImage) {
         let repaired = repairedBySession.get(agent.session.id);
         if (!repaired) {
@@ -1012,6 +1044,7 @@ export {
   MULTIMODAL_LIST_MODES,
   apply,
   attachPreStepBridge,
+  autoPromotionWarned,
   bridgeMessages,
   currentModelAcceptsImage,
   currentRoute,
@@ -1030,4 +1063,5 @@ export {
   repairLoggedImages,
   routeDeclaresImage,
   unwrappedResolveModelInfo,
+  warnAutoPromotion,
 };

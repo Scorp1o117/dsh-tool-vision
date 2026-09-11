@@ -80,7 +80,7 @@ Or load it from a local path without npm:
 | `bridgeExportDir` | temp | Export dir for bridged images (`os.tmpdir()/dsh-vision-bridge`). |
 | `multimodalModels` | `[]` | Model list (comma-separated). Each entry is matched case-insensitively against the full id, its bare id after the last `/`, and `provider/id`, with `*` / `?` globs (`*vl*`, `deepseek/*`). What the list *means* is set by the mode below. |
 | `multimodalListMode` | `whitelist` | **List mode (v0.9.0).** `whitelist`: listed models receive image blocks directly (the historical behaviour). `blacklist`: listed models are forced through the bridge — the correction layer for a model that claims image support it does not have. `off`: the list is ignored. An unknown value falls back to `whitelist`. |
-| `autoDetectMultimodal` | `false` | **Auto-detect (v0.9.0).** Decide from the current route's own declared `inputModalities`, then combine with the list (whitelist unions, blacklist subtracts). Off by default, so behaviour is unchanged from before. The declaration is always read *before* this plugin's admission wrap, so `bridgeAutoImage` can never feed its own claim back in as evidence. |
+| `autoDetectMultimodal` | `true` | **Auto-detect (v0.9.0).** Decide from the current route's own declared `inputModalities`, then combine with the list (whitelist unions, blacklist subtracts). On by default: a text-only route is bridged, a multimodal one is treated like a whitelist member and gets images directly. The declaration is always read *before* this plugin's admission wrap, so `bridgeAutoImage` can never feed its own claim back in as evidence. Set false for the hand-maintained "list only" behaviour. |
 | `bridgePreview` | `true` | Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). |
 | `bridgePreviewScanIntervalMs` | `2000` | Fallback scan interval for the preview scanner (ms); `0` disables the fallback. |
 | `bridgePreviewHideHint` | `true` | Hide the bridged hint text once the preview image has loaded (kept on failure — safe degradation). |
@@ -274,8 +274,16 @@ master switch's child fiber, so the panel keeps working while the plugin is off.
 
 > ⚠️ `inputModalities` is a **declaration**, not a guarantee — profiles commonly
 > set `input: [text, image]` on text-only models just to pass the admission gate.
-> That is why `autoDetectMultimodal` is off by default: turn it on, then name the
-> liars in the blacklist.
+> Upstream `dsh-llm-pi-ai` makes the same call for undeclared models, and its
+> source says why: the two wrong answers **do not cost the same**. Under-claiming
+> refuses the image before it is attached and names the model; over-claiming
+> admits one the provider rejects mid-turn, after the message is already durable.
+>
+> That is why detection is on by default *with* three backstops: (1) the first
+> time a route is promoted purely by its own declaration, the log says so and
+> names the fix; (2) the panel always shows the current route, the decision and
+> the reason; (3) listing that model under `blacklist` mode forces the bridge
+> back on.
 
 ## v0.8.0: master switch, and the save-path fix
 
