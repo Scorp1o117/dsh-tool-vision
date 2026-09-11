@@ -53,7 +53,9 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 | `description` | 默认描述 | 工具描述（模型可见） |
 | `bridgeTextOnly` | `true` | 把粘贴图片转成文本指引（发给看不懂图片的模型时） |
 | `bridgeExportDir` | 临时目录 | 桥接图片导出目录（`os.tmpdir()/dsh-vision-bridge`） |
-| `multimodalModels` | `[]` | 直发图片块的模型 id（如 `mimo-v2.5`） |
+| `multimodalModels` | `[]` | 模型名单（逗号分隔）。每项按「完整 id / 末段裸 id / `provider/id`」三种写法匹配，大小写不敏感，支持 `*` `?` 通配（如 `*vl*`、`deepseek/*`）。含义由下面的模式决定 |
+| `multimodalListMode` | `whitelist` | **名单模式（v0.9.0）**：`whitelist` 名单内模型直收图片块（旧行为）；`blacklist` 名单内模型强制走桥接（用来纠正"声明支持图片但实际不支持"的模型）；`off` 忽略名单。未知值一律回退 `whitelist` |
+| `autoDetectMultimodal` | `false` | **自动识别（v0.9.0）**：按当前路由自己声明的 `inputModalities` 判定，再与名单合成（白名单取并集、黑名单取差集）。默认关闭＝行为与旧版一致；声明永远读"包装前"的真值，不会被 `bridgeAutoImage` 的假声明污染 |
 | `bridgePreview` | `true` | 桥接图片内联预览：用户气泡内显示缩略图，点击放大 |
 | `bridgePreviewScanIntervalMs` | `2000` | 预览兜底扫描间隔（毫秒）；`0` 关闭兜底 |
 | `bridgePreviewHideHint` | `true` | 图片加载成功后隐藏桥接提示文本（失败时保留，安全降级） |
@@ -73,11 +75,12 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
            - id: deepseek-v4-flash
              input: [text, image]
    ```
-2. 在插件配置里列出真正多模态的模型，让它们直收图片块：
+2. 在插件配置里列出真正多模态的模型，让它们直收图片块（名单模式见下一节）：
    ```yaml
    - id: tool-vision
      name: 'dsh-tool-vision'
      config:
+       multimodalListMode: whitelist   # 默认，名单内直发图片
        multimodalModels: ['mimo-v2.5', 'grok-4.5']
    ```
 
@@ -157,6 +160,34 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 `vision_screenshot` 属于隐私敏感能力,**默认不注册**——在 tool-vision 设置中
 开启 `desktopScreenshot: true` 后才会注册桌面截屏工具。
 
+## v0.9.0：模型名单模式与自动识别
+
+桥接要回答一个问题：**当前这个模型能不能直接看图片？** v0.9.0 把它拆成两个相互独立的输入。
+
+```
+base = autoDetectMultimodal ? (路由声明含 image) : 空集
+off        → direct = base              名单不参与
+whitelist  → direct = base ∪ 名单        名单只做"加"
+blacklist  → direct = base \ 名单        名单只做"减"
+```
+
+**命中名单时以名单为准**：名单是用户明确的意图，优先级高于模型自己的声明，所以永远能纠正误判。
+
+**黑名单绝不会退化成"未列出的一律直发"**：黑名单的基准是自动识别集；没开自动识别时基准是空集，未列出的模型照样走桥接。这是刻意设计的——否则一次误配就能把图片硬塞给纯文本端点。
+
+**匹配规则**：`mimo-v2.5`、`xiaomi/mimo-v2.5`、`commandcode/xiaomi/mimo-v2.5` 指向同一个路由；`*` / `?` 为通配符；大小写不敏感。v0.8.1 只做字符串全等，README 自己举的 `mimo-v2.5` 例子在 `xiaomi/mimo-v2.5` 这类路由上其实**静默无效**，v0.9.0 修好了（只会多放行，不会收回任何旧配置已经放行的模型）。
+
+**面板**（设置 → 视觉模型）：
+
+- 名单输入框带自动补全：候选项来自 dsh 已配置的模型（`llm.listProviders()` + `llm.listModels()`），每项标注它是否**声明**支持图片，也可以直接手打通配符；
+- 顶部常驻**当前路由判定**：`provider / model`、直发还是桥接、依据是什么（名单命中 / 自动识别 / 默认）。
+
+**判定依据的读取路径**（这是本版最容易做错的地方）：`autoDetectMultimodal` **必须**读 `resolveModelInfo` 被包装之前的真值，否则 `bridgeAutoImage` 给所有模型贴上的"支持图片"就成了自证。代码里由 `unwrappedResolveModelInfo()` 保证，并有专门的回归测试。
+
+候选项由插件自己的回环路由提供：`GET /plugins/dsh-tool-vision/models`（仅本机 Host、只读、`no-store`），只返回 provider/model id 与声明能力，**不含任何密钥或端点地址**。它挂在插件主 fiber 而非总开关的子 fiber 上，所以插件关闭时面板依然可用。
+
+> ⚠️ 诚实提醒：`inputModalities` 是**声明**，不是保证——profile 里常见"为了过准入检查而写 `input: [text, image]`"的纯文本模型。`autoDetectMultimodal` 因此默认关闭；开启后请把说谎的模型写进黑名单。
+
 ## v0.8.0：总开关，以及保存修复
 
 **总开关。** `enabled` 字段加设置栏顶部的一键按钮（`一键关闭` / `重新启用`）。
@@ -187,6 +218,7 @@ fiber，15 个工具一并从模型侧消失。设置栏留在父 fiber 上，�
   `0.1.0-rc.8` 和 `0.1.1-rc.1` 测试。仍使用 DSH `0.1.0-rc.6` 的用户请锁定
   `dsh-tool-vision@0.6.1`；这是最后一个包含旧 settings 白名单兼容补丁的版本。
 - 被桥接的图片以文本指引进入对话（转录而非像素）——文本模型无法做像素级上下文推理；视觉模型的描述通过 `inspect_image` 回传。
+- 桥接是**单向门**：文本模型下贴的图会在 `agent/pre-step` 被写进持久化日志，之后切到多模态模型也不会还原成图片块（反方向——多模态切到文本模型——会由 `repairLoggedImages` 自动补上桥接）。
 - 图片以 base64 传输；注意隐私与大小限制。
 - 独立于 dsh-llm 的路由/重试体系；失败会向 Agent 返回明确错误。
 

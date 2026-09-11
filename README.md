@@ -78,7 +78,9 @@ Or load it from a local path without npm:
 | `description` | default | Tool description shown to the model. |
 | `bridgeTextOnly` | `true` | Bridge pasted images to text hints on models that cannot see images. |
 | `bridgeExportDir` | temp | Export dir for bridged images (`os.tmpdir()/dsh-vision-bridge`). |
-| `multimodalModels` | `[]` | Model ids that receive image blocks directly (e.g. `mimo-v2.5`). |
+| `multimodalModels` | `[]` | Model list (comma-separated). Each entry is matched case-insensitively against the full id, its bare id after the last `/`, and `provider/id`, with `*` / `?` globs (`*vl*`, `deepseek/*`). What the list *means* is set by the mode below. |
+| `multimodalListMode` | `whitelist` | **List mode (v0.9.0).** `whitelist`: listed models receive image blocks directly (the historical behaviour). `blacklist`: listed models are forced through the bridge — the correction layer for a model that claims image support it does not have. `off`: the list is ignored. An unknown value falls back to `whitelist`. |
+| `autoDetectMultimodal` | `false` | **Auto-detect (v0.9.0).** Decide from the current route's own declared `inputModalities`, then combine with the list (whitelist unions, blacklist subtracts). Off by default, so behaviour is unchanged from before. The declaration is always read *before* this plugin's admission wrap, so `bridgeAutoImage` can never feed its own claim back in as evidence. |
 | `bridgePreview` | `true` | Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). |
 | `bridgePreviewScanIntervalMs` | `2000` | Fallback scan interval for the preview scanner (ms); `0` disables the fallback. |
 | `bridgePreviewHideHint` | `true` | Hide the bridged hint text once the preview image has loaded (kept on failure — safe degradation). |
@@ -101,11 +103,12 @@ Or load it from a local path without npm:
              input: [text, image]
    ```
 2. List genuinely multimodal models in the plugin config so they receive
-   image blocks untouched:
+   image blocks untouched (see the next section for the list modes):
    ```yaml
    - id: tool-vision
      name: 'dsh-tool-vision'
      config:
+       multimodalListMode: whitelist    # default: listed models get images directly
        multimodalModels: ['mimo-v2.5', 'grok-4.5']
    ```
 
@@ -222,6 +225,58 @@ degrade lazily with an install hint and never break other tools).
 default** — set `desktopScreenshot: true` in the tool-vision settings to
 enable desktop capture.
 
+## v0.9.0: list modes, and auto-detection
+
+The bridge answers one question: **can the current model see images directly?**
+v0.9.0 splits it into two independent inputs.
+
+```
+base = autoDetectMultimodal ? (route declares image) : {}
+off        → direct = base              the list takes no part
+whitelist  → direct = base ∪ list       the list only adds
+blacklist  → direct = base \ list       the list only subtracts
+```
+
+**A list hit always wins**: the list is explicit user intent, so it outranks the
+model's own declaration — which is what makes it a usable correction layer.
+
+**A blacklist never degrades into "everything unlisted is direct".** Its base set
+is the auto-detected one; with auto-detection off that base set is empty, so an
+unlisted model is still bridged. That is deliberate: the alternative lets one
+typo push images at a text-only endpoint.
+
+**Matching**: `mimo-v2.5`, `xiaomi/mimo-v2.5` and `commandcode/xiaomi/mimo-v2.5`
+all address the same route; `*` / `?` are globs; matching is case-insensitive.
+v0.8.1 compared ids literally, so this README's own `mimo-v2.5` example silently
+did nothing on a route spelled `xiaomi/mimo-v2.5` — fixed here, and the fix only
+ever *adds* models to the direct set (no entry that used to force a model direct
+stops doing so).
+
+**In the panel** (Settings → Vision Model):
+
+- the list field autocompletes from the models dsh actually has configured
+  (`llm.listProviders()` + `llm.listModels()`), each labelled with whether the
+  route *declares* image input — and you can still type a glob by hand;
+- a **current route** readout shows `provider / model`, whether images go direct
+  or through the bridge, and why (list hit / auto-detect / default).
+
+**Read path (the easiest thing to get wrong here)**: `autoDetectMultimodal` MUST
+read the value from *before* `resolveModelInfo` was wrapped, or the "image
+support" that `bridgeAutoImage` stamps onto every model becomes evidence for
+itself. `unwrappedResolveModelInfo()` enforces that, with a dedicated regression
+test.
+
+Candidates come from the plugin's own loopback route:
+`GET /plugins/dsh-tool-vision/models` (loopback Host only, read-only, `no-store`).
+It returns provider/model ids and one declared-capability boolean — **no keys and
+no endpoint addresses**. It is registered on the plugin fiber rather than the
+master switch's child fiber, so the panel keeps working while the plugin is off.
+
+> ⚠️ `inputModalities` is a **declaration**, not a guarantee — profiles commonly
+> set `input: [text, image]` on text-only models just to pass the admission gate.
+> That is why `autoDetectMultimodal` is off by default: turn it on, then name the
+> liars in the blacklist.
+
 ## v0.8.0: master switch, and the save-path fix
 
 **Master switch.** `enabled`, plus a one-click button at the top of the section
@@ -259,6 +314,11 @@ write verification look intentional.
 - A bridged image enters the conversation as a text hint (a transcript, not
   pixels) — pixel-precise in-context reasoning is not available to text-only
   models; the vision model's description comes back through `inspect_image`.
+- The bridge is a **one-way door**: an image pasted on a text-only model is
+  rewritten into the durable log at `agent/pre-step`, so switching to a
+  multimodal model later does not turn it back into an image block. (The other
+  direction — multimodal to text-only — is repaired automatically by
+  `repairLoggedImages`.)
 - Images are base64-transferred; mind privacy and size limits.
 - Independent of the dsh-llm routing/retry system; failures return clear
   errors to the agent.

@@ -19,9 +19,20 @@
  *      event at a time, on the first pre-step of the session.
  *
  *    The bridged hint points at an exported local copy of the image, which
- *    the agent hands to `inspect_image`. Models listed in
- *    `multimodalModels` (or whose resolved `inputModalities` include
- *    "image") receive image blocks directly and are never bridged.
+ *    the agent hands to `inspect_image`. Which models skip the bridge
+ *    (v0.9.0) is decided by two independent inputs:
+ *
+ *    - `multimodalModels` — a user-owned list whose meaning is set by
+ *      `multimodalListMode`: `whitelist` (listed models receive image blocks
+ *      directly; the historical meaning and the default), `blacklist`
+ *      (listed models are forced through the bridge), or `off` (list
+ *      ignored). Entries match the full model id, its bare id after the last
+ *      `/`, or `provider/id`, and may contain `*` / `?` globs.
+ *    - `autoDetectMultimodal` — when on, the route's own declared
+ *      `inputModalities` forms the base set that the list then adds to
+ *      (whitelist) or subtracts from (blacklist). The declaration is always
+ *      read from the *unwrapped* `resolveModelInfo`, because the admission
+ *      wrap below rewrites it for every model.
  *
  * 3. Bridge image preview (v0.4.0, contributed by xing666173 from
  *    dsh-bridge-preview, MIT © 2026 xing666173) — the browser half renders
@@ -60,6 +71,16 @@ const BRIDGE_MARKER = "\u200b[bridge]";
 
 /** Loopback route serving bridged images to the same-origin page. */
 const BRIDGE_PREVIEW_ROUTE = "/plugins/dsh-tool-vision/image";
+/**
+ * Loopback JSON route the settings panel reads the configured model catalog
+ * from (autocomplete for `multimodalModels` and the current-route readout).
+ * Registered on the plugin's own fiber, so it stays up while the master
+ * switch is off — a section you cannot configure until you switch it on would
+ * be useless.
+ */
+const MODEL_CATALOG_ROUTE = "/plugins/dsh-tool-vision/models";
+/** Per-provider cap on catalog entries returned to the panel. */
+const MODEL_CATALOG_MAX_PER_PROVIDER = 500;
 /** Hard cap for a single served image (defense in depth; export is bounded). */
 const BRIDGE_PREVIEW_MAX_BYTES = 20 * 1024 * 1024;
 /** Extensions the preview route serves (svg/ico intentionally excluded). */
@@ -78,7 +99,7 @@ const DEFAULT_DESCRIPTION =
   "Provide the path to a local image file (absolute, or relative to the current workspace) or an http(s) URL, " +
   "optionally with a specific question. Returns the vision model's textual description or answer. " +
   "Use this whenever you need to read, describe, or extract information from image content, " +
-  "since the main model is text-only.";
+  "including an image that reached you as a bridged text hint.";
 
 /** Runtime schema for the tool-vision row. */
 const Config = z.object({
@@ -111,8 +132,44 @@ const Config = z.object({
   bridgeTextOnly: z.boolean().default(true),
   /** Export directory for bridged images; empty = system temp. */
   bridgeExportDir: z.string().default(""),
-  /** Model ids that receive image blocks directly (never bridged). */
+  /**
+   * Model ids the list below refers to (v0.9.0). Each entry is matched
+   * case-insensitively against the full model id (`xiaomi/mimo-v2.5`), its
+   * bare id after the last `/` (`mimo-v2.5`), and `provider/id`
+   * (`commandcode/xiaomi/mimo-v2.5`), and may use `*` / `?` globs
+   * (`*vl*`, `deepseek/*`). A bare id therefore keeps working however the
+   * route happens to spell it.
+   */
   multimodalModels: z.array(z.string()).default([]),
+  /**
+   * How `multimodalModels` is read (v0.9.0):
+   *
+   *  - `whitelist` (default): a listed model receives image blocks directly
+   *    and is never bridged — the meaning the list always had, so an
+   *    existing configuration keeps behaving exactly as before.
+   *  - `blacklist`: a listed model is forced through the bridge even when its
+   *    route declares image input. This is the correction layer for a model
+   *    that claims image support its endpoint does not really have.
+   *  - `off`: the list is ignored entirely; nothing is forced either way.
+   *
+   * An unknown value falls back to `whitelist`.
+   */
+  multimodalListMode: z.string().default("whitelist"),
+  /**
+   * Let the current route's own declared `inputModalities` decide, without
+   * listing every model (v0.9.0). Off by default, because the declaration is
+   * only whatever the profile says: profiles routinely declare
+   * `input: [text, image]` just to pass the host admission gate, and a wrong
+   * "yes" here sends the image straight to an endpoint that rejects it — the
+   * harness's own text-model projection is already disabled by
+   * `bridgeAutoImage`, so nothing underneath would catch it. Turn it on when
+   * the routes you use tell the truth, and name the liars in
+   * `multimodalModels` under `blacklist` mode.
+   *
+   * The value is always read from the *unwrapped* `resolveModelInfo`, so the
+   * admission wrap can never feed its own claim back in as evidence.
+   */
+  autoDetectMultimodal: z.boolean().default(false),
   /** Inline preview for bridged images: thumbnail above the hint text in the user bubble (click to zoom). */
   bridgePreview: z.boolean().default(true),
   /** Fallback scan interval for the preview scanner in ms; 0 disables the periodic fallback. */
@@ -288,7 +345,10 @@ function installAutoImageAdmission(llm, logger) {
     return { ...info, inputModalities: [...(mods ?? []), "image"] };
   };
   let installed = false;
-  llm[LLM_RESOLVE_WRAP_MARK] = true;
+  // The marker carries BOTH functions: the wrapped one proves ownership for
+  // dispose, and `original` is the only honest source of a route's real
+  // modalities once the wrap is in place (`unwrappedResolveModelInfo`).
+  llm[LLM_RESOLVE_WRAP_MARK] = { original, wrapped };
   llm.resolveModelInfo = wrapped;
   installed = true;
   logger?.debug?.("[tool-vision] automatic image admission installed (resolveModelInfo wrapped)");
@@ -373,21 +433,231 @@ function registerBridgePreviewRoute(ctx, exportDir, logger) {
 }
 
 /**
+ * Register the loopback JSON route the settings panel reads:
+ *
+ *   { current: {provider, model, direct, source, mode}, providers: [...] }
+ *
+ * `providers` comes from `llm.listProviders()` + `llm.listModels(provider)` —
+ * the routes the harness actually has configured, which is exactly the set a
+ * `multimodalModels` entry may name. `listModels` is a different seam from
+ * `resolveModelInfo`, so these declared modalities are the profile's own and
+ * are NOT contaminated by the admission wrap (a model the wrap advertises as
+ * image-capable still reports its real declaration here).
+ *
+ * Same confinement as the image route: loopback Host only, read-only,
+ * `no-store`, and no credentials or endpoints in the payload — provider ids,
+ * model ids/names and one boolean each.
+ */
+function registerModelCatalogRoute(ctx, logger) {
+  const webServer = ctx.get("webServer");
+  if (webServer === undefined) {
+    logger?.warn?.("[tool-vision] webServer unavailable; model catalog route not registered");
+    return;
+  }
+  ctx.effect(() => webServer.register({
+    kind: "exact",
+    path: MODEL_CATALOG_ROUTE,
+    async handler(req, res) {
+      const send = (status, payload) => {
+        res.writeHead(status, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+        });
+        res.end(JSON.stringify(payload));
+      };
+      const host = String(req.headers?.host ?? "");
+      if (host !== "" && !/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host)) {
+        send(403, { error: "forbidden" });
+        return;
+      }
+      const llm = ctx.get("llm");
+      if (llm === undefined) {
+        send(503, { error: "llm service unavailable" });
+        return;
+      }
+      let routes = [];
+      try {
+        routes = llm.listProviders() ?? [];
+      } catch (error) {
+        logger?.debug?.(`[tool-vision] listProviders failed: ${String(error)}`);
+      }
+      const providers = [];
+      for (const entry of routes) {
+        const id = entry?.id;
+        if (typeof id !== "string" || id.length === 0) continue;
+        const record = {
+          id,
+          name: typeof entry?.name === "string" && entry.name.length > 0 ? entry.name : id,
+          models: [],
+        };
+        try {
+          const models = await llm.listModels(id);
+          record.models = (models ?? []).slice(0, MODEL_CATALOG_MAX_PER_PROVIDER).map((model) => ({
+            id: String(model.id),
+            name: typeof model.name === "string" && model.name.length > 0 ? model.name : String(model.id),
+            image: Array.isArray(model.inputModalities) && model.inputModalities.includes("image"),
+          }));
+        } catch (error) {
+          // One broken route must never blank the whole panel: report it and
+          // keep going, so the other providers still autocomplete.
+          record.error = String(error?.message ?? error);
+        }
+        providers.push(record);
+      }
+      send(200, { current: { ...lastModelDecision }, providers });
+    },
+  }), "dsh-tool-vision: model catalog route");
+}
+
+/** Accepted `multimodalListMode` values; anything else falls back to whitelist. */
+const MULTIMODAL_LIST_MODES = ["off", "whitelist", "blacklist"];
+const DEFAULT_MULTIMODAL_LIST_MODE = "whitelist";
+
+/**
+ * Normalize a configured list mode. The settings section only ever writes one
+ * of {@link MULTIMODAL_LIST_MODES}, but the value can also arrive from a
+ * hand-edited `settings.yaml`, so an unknown string is clamped rather than
+ * treated as "no mode" (which would silently bridge everything).
+ */
+function normalizeListMode(value) {
+  return MULTIMODAL_LIST_MODES.includes(value) ? value : DEFAULT_MULTIMODAL_LIST_MODE;
+}
+
+const listEntryCache = new Map();
+/**
+ * Compile one list entry into an anchored, case-insensitive regexp. A literal
+ * entry is just an exact match; `*` and `?` are the only metacharacters, so a
+ * model id containing `.` or `+` still matches itself.
+ */
+function listEntryRegExp(entry) {
+  const cached = listEntryCache.get(entry);
+  if (cached !== undefined) return cached;
+  const source = entry
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*")
+    .replace(/\?/g, ".");
+  const compiled = new RegExp(`^${source}$`, "i");
+  listEntryCache.set(entry, compiled);
+  return compiled;
+}
+
+/**
+ * Whether any entry in `patterns` names this route. Each entry is tested
+ * against the full model id, its bare id after the last `/`, and
+ * `provider/id` — so `mimo-v2.5`, `xiaomi/mimo-v2.5` and
+ * `commandcode/xiaomi/mimo-v2.5` all address the same route, and `*vl*`
+ * addresses every variant of one family. Exported for unit testing.
+ */
+function modelListMatches(patterns, provider, model) {
+  if (!Array.isArray(patterns) || patterns.length === 0) return false;
+  if (typeof model !== "string" || model.length === 0) return false;
+  const slash = model.lastIndexOf("/");
+  const candidates = [model, slash === -1 ? model : model.slice(slash + 1)];
+  if (typeof provider === "string" && provider.length > 0) candidates.push(`${provider}/${model}`);
+  for (const raw of patterns) {
+    if (raw === undefined || raw === null) continue;
+    const entry = String(raw).trim();
+    if (entry.length === 0) continue;
+    const re = listEntryRegExp(entry);
+    if (candidates.some((candidate) => re.test(candidate))) return true;
+  }
+  return false;
+}
+
+/**
+ * The route the session is on: the logged request header first, then the
+ * agent's own options. `provider` is optional (older logs may lack it).
+ */
+function currentRoute(agent) {
+  const header = agent?.session?.requestHeader?.();
+  return {
+    provider: header?.config?.provider ?? agent?.options?.provider,
+    model: header?.config?.model ?? agent?.options?.model,
+  };
+}
+
+/**
+ * The last decision `currentModelAcceptsImage` made, for the settings panel's
+ * "current route" readout (served over {@link MODEL_CATALOG_ROUTE}). A plain
+ * mutable record — the panel only ever reads it.
+ */
+const lastModelDecision = {
+  provider: undefined,
+  model: undefined,
+  direct: false,
+  source: "none",
+  mode: DEFAULT_MULTIMODAL_LIST_MODE,
+};
+
+/**
+ * `resolveModelInfo` as it was before {@link installAutoImageAdmission}
+ * wrapped it. Auto-detection MUST read through this: the wrap reports image
+ * support for *every* model, so reading the wrapped method would make the
+ * plugin's own claim the evidence for itself.
+ */
+function unwrappedResolveModelInfo(llm) {
+  const marker = llm?.[LLM_RESOLVE_WRAP_MARK];
+  const fn = marker?.original ?? llm?.resolveModelInfo;
+  return typeof fn === "function" ? fn.bind(llm) : undefined;
+}
+
+/**
+ * Whether the route declares `image` input, read before the admission wrap.
+ * `false` and `undefined` are the same answer to the caller ("not known to be
+ * multimodal"): a route nobody could resolve is bridged, never guessed.
+ */
+async function routeDeclaresImage(llm, provider, model) {
+  const resolve = unwrappedResolveModelInfo(llm);
+  if (resolve === undefined || typeof provider !== "string" || typeof model !== "string") {
+    return false;
+  }
+  try {
+    const info = await resolve(provider, model);
+    return info?.inputModalities?.includes("image") === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Whether the session's current model may receive image blocks directly.
- * Uses the last logged request header first, then the agent's own options,
- * and consults ONLY the `multimodalModels` whitelist — never the model's
- * declared `inputModalities`, because profiles routinely declare
- * `input: [text, image]` on text-only models to pass the harness's prompt
- * admission check (that declaration says nothing about whether the upstream
- * endpoint really accepts `image_url` parts).
+ *
+ * Two inputs, deliberately independent:
+ *
+ *  - the base set — the route's own declared `inputModalities`, and only when
+ *    `autoDetectMultimodal` is on. It is read through
+ *    {@link unwrappedResolveModelInfo}, never through the admission wrap.
+ *  - the list — `multimodalModels` under `multimodalListMode`, and the list is
+ *    always explicit user intent, so it outranks the declaration: whitelist
+ *    adds to the base set, blacklist subtracts from it.
+ *
  * Returns true when bridging is disabled (nothing would be bridged anyway).
  */
-async function currentModelAcceptsImage(agent, config) {
-  if (!config.bridgeTextOnly) return true;
-  const header = agent?.session?.requestHeader?.();
-  const model = header?.config?.model ?? agent?.options?.model;
-  if (!model) return false;
-  return config.multimodalModels.includes(model);
+async function currentModelAcceptsImage(agent, config, llm) {
+  const mode = normalizeListMode(config.multimodalListMode);
+  if (!config.bridgeTextOnly) {
+    Object.assign(lastModelDecision, { ...currentRoute(agent), direct: true, source: "bridge-off", mode });
+    return true;
+  }
+  const { provider, model } = currentRoute(agent);
+  if (!model) {
+    Object.assign(lastModelDecision, { provider, model, direct: false, source: "no-route", mode });
+    return false;
+  }
+  const base = config.autoDetectMultimodal
+    ? await routeDeclaresImage(llm, provider, model)
+    : false;
+  // `off` means the list carries no opinion at all — it is not "empty list
+  // under whitelist", it is "no list semantics", so nothing is forced.
+  const listed = mode !== "off" && modelListMatches(config.multimodalModels, provider, model);
+  let direct = base;
+  let source = base ? "auto" : "default";
+  if (listed) {
+    direct = mode !== "blacklist";
+    source = mode === "blacklist" ? "blacklist" : "whitelist";
+  }
+  Object.assign(lastModelDecision, { provider, model, direct, source, mode });
+  return direct;
 }
 
 /**
@@ -443,7 +713,7 @@ function attachPreStepBridge(ctx, getConfig, exportDir) {
     const agent = payload?.agent;
     if (!agent?.session) return decision;
     try {
-      const acceptsImage = await currentModelAcceptsImage(agent, getConfig());
+      const acceptsImage = await currentModelAcceptsImage(agent, getConfig(), ctx.get("llm"));
       if (!acceptsImage) {
         let repaired = repairedBySession.get(agent.session.id);
         if (!repaired) {
@@ -716,6 +986,14 @@ function apply(ctx, config) {
     syncFeatures();
   });
 
+  // ── model catalog route: settings support, so it lives on THIS fiber ───────
+  // The master switch disposes the feature fiber on purpose (tools, bridge,
+  // preview route), while the settings section itself deliberately stays
+  // mounted — and a section whose list field cannot autocomplete is a section
+  // you cannot configure before switching the plugin on. Registered here so it
+  // outlives `enabled: false`; read-only and secret-free by construction.
+  registerModelCatalogRoute(ctx, ctx.logger);
+
   // No settings provider: the composition entry is the whole configuration.
   syncFeatures();
 }
@@ -727,18 +1005,29 @@ export {
   BRIDGE_PREVIEW_ROUTE,
   Config,
   DEFAULT_DESCRIPTION,
+  DEFAULT_MULTIMODAL_LIST_MODE,
   EXT_BY_MEDIA,
+  MODEL_CATALOG_MAX_PER_PROVIDER,
+  MODEL_CATALOG_ROUTE,
+  MULTIMODAL_LIST_MODES,
   apply,
   attachPreStepBridge,
   bridgeMessages,
   currentModelAcceptsImage,
+  currentRoute,
   deepFreeze,
   exportImage,
   hasImageBlock,
   inject,
   installAutoImageAdmission,
+  lastModelDecision,
+  modelListMatches,
   name,
+  normalizeListMode,
   parseQuery,
   registerBridgePreviewRoute,
+  registerModelCatalogRoute,
   repairLoggedImages,
+  routeDeclaresImage,
+  unwrappedResolveModelInfo,
 };

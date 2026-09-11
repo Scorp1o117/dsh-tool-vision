@@ -46,6 +46,11 @@ window.__ModuleLoader__.load({
       ".__tv_masterLabel{font-size:13px;color:var(--dsw-alias-label-primary)}" +
       ".__tv_status{font-size:12px;color:var(--dsw-alias-label-tertiary)}" +
       ".__tv_error{font-size:12px;color:var(--dsw-alias-state-error-primary)}" +
+      ".__tv_catalog{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-tertiary);padding:6px 10px;border:1px dashed var(--dsw-alias-border-l2);border-radius:8px}" +
+      ".__tv_badge{font-size:10px;border:1px solid var(--dsw-alias-border-l2);border-radius:4px;padding:0 4px;color:var(--dsw-alias-label-tertiary)}" +
+      ".__tv_badgeOk{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}" +
+      ".__tv_link{background:none;border:none;font:inherit;font-size:11px;padding:0;cursor:pointer;color:var(--dsw-alias-state-business-primary)}" +
+      ".__tv_link:disabled{opacity:.5;cursor:default}" +
       ".__tv_unavailable{font-size:13px;color:var(--dsw-alias-label-tertiary)}";
     var tagId = "dsh-tool-vision/main.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
@@ -68,7 +73,33 @@ window.__ModuleLoader__.load({
       maxImageBytes: "本地图片大小上限（字节）",
       bridgeTextOnly: "图片桥接（文本模型贴图自动转 inspect_image 指引）",
       bridgeExportDir: "桥接图片导出目录（空 = 系统临时目录）",
-      multimodalModels: "多模态白名单（逗号分隔，这些模型直收图片块）",
+      multimodalModels: "多模态名单（逗号分隔；支持 * 与 ? 通配，如 *vl*、deepseek/*）",
+      fieldMultimodalListMode: "名单模式",
+      modeWhitelist: "白名单（名单内模型直收图片块）",
+      modeBlacklist: "黑名单（名单内模型强制走桥接）",
+      modeOff: "关闭（忽略名单）",
+      hintMultimodalListMode: "白名单＝名单内直发图片；黑名单＝名单内强制桥接（用来纠正“声明支持图片但实际不支持”的模型）；关闭＝名单不生效。黑名单的基准是自动识别集，绝不会变成“未列出的一律直发”。",
+      hintMultimodalModels: "每项按“完整 id / 末段裸 id / provider/id”三种写法匹配，大小写不敏感；* 与 ? 为通配符（如 *vl*）。可从候选中选择。",
+      fieldAutoDetectMultimodal: "自动识别多模态模型（按路由声明判定）",
+      hintAutoDetectMultimodal: "默认关闭（与旧版一致）。开启后按路由自己声明的 inputModalities 决定是否直发图片；声明永远读“包装前”的真值，不会被插件的自动声明污染。声明可能不实，请用黑名单纠正。",
+      catalogTitle: "当前路由判定",
+      catalogNoRoute: "尚未判定（发一条消息后刷新）",
+      catalogDirect: "直发图片",
+      catalogBridged: "走桥接",
+      catalogSource: "依据",
+      catalogSourceWhitelist: "名单（白名单命中）",
+      catalogSourceBlacklist: "名单（黑名单命中）",
+      catalogSourceAuto: "自动识别（路由声明支持图片）",
+      catalogSourceDefault: "默认（未识别 → 桥接）",
+      catalogSourceBridgeOff: "桥接已关闭",
+      catalogSourceNoRoute: "无路由信息",
+      catalogLoading: "正在读取已配置模型…",
+      catalogRefresh: "刷新模型列表",
+      catalogFailed: "模型列表读取失败",
+      catalogEmpty: "dsh 尚未配置任何模型",
+      catalogImage: "声明支持图片",
+      catalogPickHint: "从 dsh 已配置的模型中选择，或手填通配符",
+      catalogProviderError: "该 provider 的模型列表不可用",
       fieldBaseUrl: "API Base URL",
       fieldApiKey: "API Key",
       fieldApiKeyEnv: "API Key 环境变量（apiKey 为空时读取）",
@@ -78,7 +109,7 @@ window.__ModuleLoader__.load({
       fieldMaxImageBytes: "图片大小上限（字节）",
       fieldBridgeTextOnly: "图片桥接开关",
       fieldBridgeExportDir: "桥接导出目录",
-      fieldMultimodalModels: "多模态白名单（逗号分隔）",
+      fieldMultimodalModels: "模型名单（逗号分隔，支持通配）",
       fieldBridgePreview: "桥接图片内联预览（气泡内缩略图，点击放大）",
       fieldBridgePreviewScanIntervalMs: "预览兜底扫描间隔（毫秒，0 = 关闭兜底）",
       fieldBridgePreviewHideHint: "图片加载成功后隐藏桥接提示文本",
@@ -119,7 +150,33 @@ window.__ModuleLoader__.load({
       maxImageBytes: "Max local image size (bytes)",
       bridgeTextOnly: "Image bridge (pasted images on text-only models become inspect_image hints)",
       bridgeExportDir: "Bridge export dir (empty = system temp)",
-      multimodalModels: "Multimodal whitelist (comma-separated; these models receive image blocks directly)",
+      multimodalModels: "Model list (comma-separated; * and ? globs allowed, e.g. *vl*, deepseek/*)",
+      fieldMultimodalListMode: "List mode",
+      modeWhitelist: "Whitelist (listed models receive image blocks directly)",
+      modeBlacklist: "Blacklist (listed models are forced through the bridge)",
+      modeOff: "Off (ignore the list)",
+      hintMultimodalListMode: "Whitelist: listed models get images directly. Blacklist: listed models are always bridged — the correction layer for a model that claims image support it does not have. Off: the list does nothing. A blacklist never degrades into \"everything unlisted is direct\".",
+      hintMultimodalModels: "Each entry is matched case-insensitively against the full id, its bare id after the last /, and provider/id; * and ? are globs (*vl*). Pick from the candidates below or type freely.",
+      fieldAutoDetectMultimodal: "Auto-detect multimodal models (trust the route's declaration)",
+      hintAutoDetectMultimodal: "Off by default (same as before). When on, the route's own declared inputModalities decides, read BEFORE the plugin's admission wrap so its own claim can never become the evidence. A declaration can lie — correct it with the blacklist.",
+      catalogTitle: "Current route",
+      catalogNoRoute: "Not decided yet (send a message, then refresh)",
+      catalogDirect: "Images direct",
+      catalogBridged: "Bridged",
+      catalogSource: "Because",
+      catalogSourceWhitelist: "list (whitelist hit)",
+      catalogSourceBlacklist: "list (blacklist hit)",
+      catalogSourceAuto: "auto-detect (route declares image)",
+      catalogSourceDefault: "default (unrecognised → bridged)",
+      catalogSourceBridgeOff: "bridging is off",
+      catalogSourceNoRoute: "no route information",
+      catalogLoading: "Reading configured models…",
+      catalogRefresh: "Refresh model list",
+      catalogFailed: "Could not read the model list",
+      catalogEmpty: "dsh has no configured models",
+      catalogImage: "declares image",
+      catalogPickHint: "Pick from the models dsh has configured, or type a glob",
+      catalogProviderError: "this provider's model list is unavailable",
       fieldBaseUrl: "API Base URL",
       fieldApiKey: "API Key",
       fieldApiKeyEnv: "API key env var (read when apiKey is empty)",
@@ -129,7 +186,7 @@ window.__ModuleLoader__.load({
       fieldMaxImageBytes: "Max image size (bytes)",
       fieldBridgeTextOnly: "Image bridge",
       fieldBridgeExportDir: "Bridge export dir",
-      fieldMultimodalModels: "Multimodal whitelist (comma-separated)",
+      fieldMultimodalModels: "Model list (comma-separated)",
       fieldBridgePreview: "Bridge image preview (inline thumbnail in the bubble, click to zoom)",
       fieldBridgePreviewScanIntervalMs: "Preview fallback scan interval (ms, 0 = disable)",
       fieldBridgePreviewHideHint: "Hide the bridged hint text once the image has loaded",
@@ -174,7 +231,13 @@ window.__ModuleLoader__.load({
       { key: "maxImageBytes", label: "fieldMaxImageBytes", type: "number" },
       { key: "bridgeTextOnly", label: "fieldBridgeTextOnly", type: "checkbox" },
       { key: "bridgeExportDir", label: "fieldBridgeExportDir", type: "text" },
-      { key: "multimodalModels", label: "fieldMultimodalModels", type: "csv" },
+      { key: "multimodalListMode", label: "fieldMultimodalListMode", type: "select", options: [
+        { value: "whitelist", label: "modeWhitelist" },
+        { value: "blacklist", label: "modeBlacklist" },
+        { value: "off", label: "modeOff" }
+      ] },
+      { key: "multimodalModels", label: "fieldMultimodalModels", type: "modellist" },
+      { key: "autoDetectMultimodal", label: "fieldAutoDetectMultimodal", type: "checkbox" },
       { key: "bridgePreview", label: "fieldBridgePreview", type: "checkbox" },
       { key: "bridgePreviewScanIntervalMs", label: "fieldBridgePreviewScanIntervalMs", type: "number" },
       { key: "bridgePreviewHideHint", label: "fieldBridgePreviewHideHint", type: "checkbox" },
@@ -191,7 +254,9 @@ window.__ModuleLoader__.load({
       maxImageBytes: "maxImageBytes",
       bridgeTextOnly: "bridgeTextOnly",
       bridgeExportDir: "bridgeExportDir",
-      multimodalModels: "multimodalModels",
+      multimodalModels: "hintMultimodalModels",
+      multimodalListMode: "hintMultimodalListMode",
+      autoDetectMultimodal: "hintAutoDetectMultimodal",
       bridgePreview: "hintBridgePreview",
       bridgePreviewScanIntervalMs: "hintBridgePreviewScanIntervalMs",
       bridgePreviewHideHint: "hintBridgePreviewHideHint",
@@ -238,6 +303,28 @@ window.__ModuleLoader__.load({
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [ready]);
 
+      // ── configured-model catalog (v0.9.0) ─────────────────────────────────
+      // The list field autocompletes from the routes the host actually has,
+      // read over the plugin's own loopback route. Loaded once per mount and
+      // refreshed on demand; a failure only costs the autocomplete, never the
+      // ability to type an entry by hand.
+      var [catalog, setCatalog] = react.useState(null);
+      var [catalogBusy, setCatalogBusy] = react.useState(false);
+      var [catalogError, setCatalogError] = react.useState(null);
+      var loadCatalog = react.useCallback(function () {
+        setCatalogBusy(true);
+        setCatalogError(null);
+        fetch(CATALOG_URL, { headers: { Accept: "application/json" } })
+          .then(function (response) {
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return response.json();
+          })
+          .then(function (data) { setCatalog(data); })
+          .catch(function (error) { setCatalogError(String(error && error.message ? error.message : error)); })
+          .then(function () { setCatalogBusy(false); });
+      }, []);
+      react.useEffect(function () { loadCatalog(); }, [loadCatalog]);
+
       if (snapshot.status === "unavailable") {
         return h("p", { className: "__tv_unavailable" }, t("unavailable"));
       }
@@ -247,7 +334,7 @@ window.__ModuleLoader__.load({
       var user = snapshot.user || {};
 
       function fieldDraft(f) {
-        if (f.type === "csv") return draft[f.key] !== void 0 ? draft[f.key] : draftToCsv(value[f.key]);
+        if (f.type === "csv" || f.type === "modellist") return draft[f.key] !== void 0 ? draft[f.key] : draftToCsv(value[f.key]);
         if (f.type === "checkbox") return draft[f.key] !== void 0 ? draft[f.key] : Boolean(value[f.key]);
         return draft[f.key] !== void 0 ? draft[f.key] : String(value[f.key] ?? "");
       }
@@ -274,7 +361,7 @@ window.__ModuleLoader__.load({
         var ops = [];
         FIELDS.forEach(function (f) {
           var d = fieldDraft(f);
-          if (f.type === "csv") {
+          if (f.type === "csv" || f.type === "modellist") {
             var arr = String(d).split(",").map(function (s) { return s.trim(); }).filter(Boolean);
             var cur = value[f.key] || [];
             if (arr.length === cur.length && arr.every(function (x, i) { return x === cur[i]; })) return;
@@ -398,6 +485,9 @@ window.__ModuleLoader__.load({
         });
       }
 
+      var current = (catalog && catalog.current) || {};
+      var catalogOptions = buildCatalogOptions(catalog, t);
+
       return h("div", { className: "__tv_root" },
         h("p", { className: "__tv_hint", style: { margin: "0 0 4px" } }, t("intro")),
         h("div", { className: "__tv_master" },
@@ -409,8 +499,22 @@ window.__ModuleLoader__.load({
             onClick: onToggleEnabled,
             disabled: busy || !snapshot.writable
           }, value.enabled === false ? t("turnOn") : t("turnOff"))),
+        h("div", { className: "__tv_catalog" },
+          h("span", { className: "__tv_label" }, t("catalogTitle")),
+          current.model
+            ? h("span", null, (current.provider ? current.provider + " / " : "") + current.model)
+            : h("span", null, catalogBusy ? t("catalogLoading") : t("catalogNoRoute")),
+          current.model ? h("span", { className: "__tv_badge " + (current.direct ? "__tv_badgeOk" : "") },
+            current.direct ? t("catalogDirect") : t("catalogBridged")) : null,
+          current.model ? h("span", null, t("catalogSource") + "：" + sourceLabel(current.source, t)) : null,
+          h("button", { type: "button", className: "__tv_link", onClick: loadCatalog, disabled: catalogBusy }, t("catalogRefresh")),
+          catalogError ? h("span", { className: "__tv_error" }, t("catalogFailed") + "：" + catalogError) : null),
         FIELDS.map(function (f) {
           var overridden = f.key in user;
+          var hint = f.key in ZH_HINTS ? h("span", { className: "__tv_hint" }, t(ZH_HINTS[f.key])) : null;
+          var label = h("span", { className: "__tv_label" },
+            labelOf(f, t),
+            overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null);
           if (f.type === "checkbox") {
             return h("label", { key: f.key, className: "__tv_field" },
               h("span", { className: "__tv_row" },
@@ -418,14 +522,42 @@ window.__ModuleLoader__.load({
                 h("span", { className: "__tv_label" }, labelOf(f, t)),
                 overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null
               ),
-              f.key in ZH_HINTS ? h("span", { className: "__tv_hint" }, t(ZH_HINTS[f.key])) : null
+              hint
+            );
+          }
+          if (f.type === "select") {
+            var spec = f.options || [];
+            var chosen = fieldDraft(f);
+            // An unset namespace must show the default the server would apply,
+            // not an empty box that reads as "no mode".
+            if (!chosen && spec.length > 0) chosen = spec[0].value;
+            return h("label", { key: f.key, className: "__tv_field" },
+              label,
+              h("select", {
+                className: "__tv_input",
+                value: chosen,
+                disabled: !snapshot.writable,
+                onChange: function (e) { setField(f, e.target.value); }
+              }, spec.map(function (o) { return h("option", { key: o.value, value: o.value }, t(o.label)); })),
+              hint
+            );
+          }
+          if (f.type === "modellist") {
+            return h("label", { key: f.key, className: "__tv_field" },
+              label,
+              h("input", {
+                className: "__tv_input",
+                type: "text",
+                list: MODEL_OPTIONS_ID,
+                value: fieldDraft(f),
+                placeholder: t("catalogPickHint"),
+                onChange: function (e) { setField(f, e.target.value); }
+              }),
+              hint
             );
           }
           return h("label", { key: f.key, className: "__tv_field" },
-            h("span", { className: "__tv_label" },
-              labelOf(f, t),
-              overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null
-            ),
+            label,
             h("input", {
               className: "__tv_input",
               type: f.type === "password" ? "password" : f.type === "number" ? "number" : "text",
@@ -433,9 +565,10 @@ window.__ModuleLoader__.load({
               placeholder: f.type === "password" ? (overridden ? "••••••••" : t("apiKeyHint")) : (f.placeholder || ""),
               onChange: function (e) { setField(f, e.target.value); }
             }),
-            f.key in ZH_HINTS ? h("span", { className: "__tv_hint" }, t(ZH_HINTS[f.key])) : null
+            hint
           );
         }),
+        h("datalist", { id: MODEL_OPTIONS_ID }, catalogOptions),
         h("div", { className: "__tv_actions" },
           h("button", { type: "button", className: "__tv_btn __tv_btnPrimary", onClick: onSave, disabled: busy || !snapshot.writable }, t("save")),
           h("button", { type: "button", className: "__tv_btn", onClick: onReset, disabled: busy || !snapshot.writable }, t("reset")),
@@ -450,12 +583,62 @@ window.__ModuleLoader__.load({
       var out = {};
       for (var i = 0; i < FIELDS.length; i += 1) {
         var f = FIELDS[i];
-        out[f.key] = f.type === "csv" ? draftToCsv(value[f.key]) : f.type === "checkbox" ? Boolean(value[f.key]) : String(value[f.key] ?? "");
+        out[f.key] = f.type === "csv" || f.type === "modellist" ? draftToCsv(value[f.key]) : f.type === "checkbox" ? Boolean(value[f.key]) : String(value[f.key] ?? "");
       }
       return out;
     }
     function draftToCsv(arr) {
       return Array.isArray(arr) ? arr.join(", ") : String(arr ?? "");
+    }
+
+    // ── configured-model catalog (v0.9.0) ─────────────────────────────────
+    /** Loopback route the server half serves the configured model list on. */
+    var CATALOG_URL = "/plugins/dsh-tool-vision/models";
+    /** Id of the shared <datalist> every model-list field points at. */
+    var MODEL_OPTIONS_ID = "__tv_model_options";
+    /** Cap on rendered candidates: a huge catalog must not bloat the panel. */
+    var MODEL_OPTIONS_MAX = 400;
+
+    /** Translate the server's decision reason into a locale key. */
+    function sourceLabel(source, t) {
+      var key = {
+        whitelist: "catalogSourceWhitelist",
+        blacklist: "catalogSourceBlacklist",
+        auto: "catalogSourceAuto",
+        "bridge-off": "catalogSourceBridgeOff",
+        "no-route": "catalogSourceNoRoute"
+      }[source] || "catalogSourceDefault";
+      return t(key);
+    }
+
+    /**
+     * One <option> per configured model, plus one for its bare id (so both
+     * `xiaomi/mimo-v2.5` and `mimo-v2.5` are one click away). The label carries
+     * the provider and whether the route DECLARES image input — the panel's
+     * only honest hint about which entries are plausible.
+     */
+    function buildCatalogOptions(catalog, t) {
+      var out = [];
+      var providers = catalog && Array.isArray(catalog.providers) ? catalog.providers : [];
+      for (var pi = 0; pi < providers.length && out.length < MODEL_OPTIONS_MAX; pi += 1) {
+        var provider = providers[pi];
+        var models = Array.isArray(provider.models) ? provider.models : [];
+        for (var mi = 0; mi < models.length && out.length < MODEL_OPTIONS_MAX; mi += 1) {
+          var entry = models[mi];
+          var suffix = " · " + provider.id + (entry.image ? " · " + t("catalogImage") : "");
+          out.push(h("option", {
+            key: pi + ":" + mi + ":" + entry.id,
+            value: entry.id,
+            label: (entry.name || entry.id) + suffix
+          }));
+          var slash = entry.id.lastIndexOf("/");
+          if (slash !== -1) {
+            var bare = entry.id.slice(slash + 1);
+            out.push(h("option", { key: pi + ":" + mi + ":bare:" + bare, value: bare, label: bare + suffix }));
+          }
+        }
+      }
+      return out;
     }
 
     // ── bridge image preview (v0.4.0, xing666173 / dsh-bridge-preview) ────
