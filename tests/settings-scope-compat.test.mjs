@@ -5,6 +5,17 @@ import test from 'node:test';
 const clientSource = await readFile(new URL('../client.js', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
+test('manifest records verified DSH latest and next without claiming alpha', () => {
+  const compatibility = manifest.dsh.compatibility;
+  assert.equal(compatibility.dshReleases['0.1.5-rc.2'], 'compatible');
+  assert.equal(compatibility.dshReleases['0.1.5-rc.3'], 'compatible');
+  for (const version of ['0.1.6-alpha.1', '0.1.6-alpha.2', '0.1.7-alpha.1']) {
+    assert.equal(compatibility.dshReleases[version], 'unknown');
+  }
+  assert.equal(compatibility.node, manifest.engines.node);
+  assert.deepEqual(compatibility.profiles, ['web']);
+});
+
 test('the client calls only methods the SettingsScope seam defines', () => {
   // The full seam is getSnapshot / subscribe / mutate / set / unset
   // (packages/client/ui-settings/src/client/settings-contract.ts). It has NEVER

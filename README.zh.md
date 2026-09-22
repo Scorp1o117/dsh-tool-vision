@@ -17,6 +17,13 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 - 注册在**全局工具层**：进程内所有 Agent 都能调用 `inspect_image`。
 - **Web UI 设置栏（v0.3.0）**：设置 → 视觉模型 编辑 `tool-vision` 命名空间（API 地址、只写密钥、模型、桥接选项），写入 `settings.yaml`，**改动即时生效无需重启**。API 密钥存放在 `settings.yaml` 而非 profile patch；插件按包名挂载（`name: 'dsh-tool-vision'`）以便 web 端发现客户端 bundle。
 
+## 兼容性（v0.9.1）
+
+已在 DSH `0.1.5-rc.3`（`next`）的一次性 Web Profile 中验证；`0.1.5-rc.2`
+仍是 `latest`。rc.3 宿主目前引用尚未发布的
+`dsh-client-ui-sidebar-documentpreview@0.1.5-rc.3`，烟测仅将这一无关的 UI
+包临时回退为 rc.2；rc.3 原样安装仍受上游阻塞。alpha 版本继续标记 `unknown`。
+
 ## 安装
 
 在 profile patch（`$DSH_HOME/profiles/<name>/cordis.patch.yml`）里挂载：
