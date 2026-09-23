@@ -222,5 +222,77 @@ let currentConfig = cfg()
     dict.autoDetectMultimodal?.meta?.default === true)
 }
 
+// ── case 11: pi-ai adapter snapshot model and modelOf get image modality on direct route ──
+{
+  currentConfig = cfg({ probeResults: { 'p/m': 'yes' } })
+  const catalogModel = { id: 'm', input: ['text'] }
+  const adapter = {
+    current() {
+      return { models: { getModel: (prov, mod) => (mod === 'm' ? catalogModel : undefined) } }
+    },
+    modelOf(snapshot, prov, mod) {
+      return snapshot.models.getModel(prov, mod)
+    },
+    async prepareCall(provider, model) {
+      return {
+        model: { provider, id: model, name: model, inputModalities: ['text'] },
+        stream: () => 'streamed',
+      }
+    },
+  }
+  const rawModelOf = adapter.modelOf
+  const llm = makeLlm(adapter)
+  const dispose = installDispatchImageAdmission(llm, getConfig)
+
+  // Before prepareCall, directRouteCache is not yet populated
+  const snapBefore = adapter.current()
+  const mBefore = adapter.modelOf(snapBefore, 'p', 'm')
+  check('before prepareCall, modelOf reflects raw catalog input', !mBefore.input.includes('image'))
+
+  // prepareCall executes for direct route
+  const call = await llm.registration('p').adapter.prepareCall('p', 'm')
+  check('prepareCall returns model with image modality', call.model.inputModalities.includes('image'))
+
+  // After prepareCall: catalog model input is patched
+  check('catalog model input is patched with image', catalogModel.input.includes('image'))
+
+  // adapter.modelOf returns model with image modality
+  const mAfter = adapter.modelOf(snapBefore, 'p', 'm')
+  check('adapter.modelOf returns model with image modality', mAfter.input.includes('image'))
+
+  // Dispose restores everything
+  dispose()
+  check('dispose restores adapter.modelOf', adapter.modelOf === rawModelOf)
+  check('dispose removes image from catalog model input', !catalogModel.input.includes('image'))
+}
+
+// ── case 12: non-direct route does not mutate snapshot model or modelOf ──
+{
+  currentConfig = cfg({ probeResults: { 'p/m': 'no' } })
+  const catalogModel = { id: 'm', input: ['text'] }
+  const adapter = {
+    current() {
+      return { models: { getModel: (prov, mod) => (mod === 'm' ? catalogModel : undefined) } }
+    },
+    modelOf(snapshot, prov, mod) {
+      return snapshot.models.getModel(prov, mod)
+    },
+    async prepareCall(provider, model) {
+      return {
+        model: { provider, id: model, name: model, inputModalities: ['text'] },
+        stream: () => 'streamed',
+      }
+    },
+  }
+  const llm = makeLlm(adapter)
+  const dispose = installDispatchImageAdmission(llm, getConfig)
+
+  await llm.registration('p').adapter.prepareCall('p', 'm')
+  check('non-direct route leaves catalog model input untouched', !catalogModel.input.includes('image'))
+  const m = adapter.modelOf(adapter.current(), 'p', 'm')
+  check('non-direct route leaves modelOf input untouched', !m.input.includes('image'))
+  dispose()
+}
+
 console.log(allOk ? 'ALL DISPATCH-IMAGE TESTS PASSED' : 'SOME TESTS FAILED')
 process.exit(allOk ? 0 : 1)

@@ -244,6 +244,23 @@ base = autoDetect ? 路由声明含 image : ∅
 
 > 未知协议的路由（如 `openai-responses`）会直接返回 `unknown` 并说明原因，而不是用 `chat/completions` 去猜一个自信的错误答案。
 
+## v0.9.3：适配器快照模型准入（pi-ai 门禁放行）
+
+**问题**。`v0.9.2` 的 `installDispatchImageAdmission` 成功满足了 DSH 核心层 `LlmService.generate` 的模态检查，将图片放行给底层适配器。但在以 `dsh-llm-pi-ai` 作为适配器时，其内部在 `streamWithSnapshot` 中执行了第二道门禁校验：
+
+```js
+const model = this.modelOf(snapshot, options.provider, options.model);
+if (containsImage && !model.input.includes("image"))
+  throw new LlmError(`pi-ai model "${model.id}" does not support image input`, "UNSUPPORTED_CONTENT");
+```
+
+`this.modelOf` 直接读取适配器自身维护的 `snapshot.models` 目录，若用户未在 `settings.yaml` 中显式声明 `input: [text, image]`，此处默认只有 `["text"]`。导致未声明的模型在放行图片后，在流式发起前被 `pi-ai` 适配器抛出 `UNSUPPORTED_CONTENT`，且由于该图片已被写进会话历史，后续所有轮次（哪怕发纯文本）都会彻底报错锁死。
+
+**修复**。在判定为直通路由（`direct: true`）时，`installDispatchImageAdmission` 增加了双重深度注入：
+1. 包装 `adapter.modelOf`（若存在），使其对直通路由返回携带 `"image"` 模态的模型对象；
+2. 动态向当前快照模型（`snapshot.models.getModel(route, model).input`）追加 `"image"` 模态；
+3. `dispose` 时完整还原 `adapter.modelOf` 并清理被追加的模态数组。
+
 ## v0.9.2：准入不等于派发
 
 **问题**。插件收集的每一个能力信号 —— `probeResults`、`multimodalModels`、

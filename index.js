@@ -427,15 +427,34 @@ function installDispatchImageAdmission(llm, getConfig, logger) {
   }
   if (llm[LLM_REGISTRATION_WRAP_MARK]) return () => {}; // already wrapped by us (HMR re-apply)
   const original = llm.registration.bind(llm);
-  /** adapter -> the prepareCall it had before this wrap, for dispose. */
+  /** adapter -> { prepareCall, modelOf } original methods, for dispose. */
   const patched = new Map();
+  /** Set of arrays where we pushed "image", for cleanup on dispose. */
+  const modifiedInputs = new Set();
+  /** Keyed routes (probeKey) known to have direct dispatch permission. */
+  const directRouteCache = new Set();
+
   const wrapped = (provider) => {
     const registration = original(provider);
     const adapter = registration?.adapter;
     if (adapter !== undefined && adapter !== null
         && !patched.has(adapter) && typeof adapter.prepareCall === "function") {
       const rawPrepare = adapter.prepareCall;
+      const rawModelOf = typeof adapter.modelOf === "function" ? adapter.modelOf : undefined;
       const prepare = rawPrepare.bind(adapter);
+
+      if (rawModelOf !== undefined) {
+        adapter.modelOf = function (snapshot, route, model) {
+          const resolved = rawModelOf.call(this, snapshot, route, model);
+          if (resolved !== undefined && resolved !== null
+              && Array.isArray(resolved.input) && !resolved.input.includes("image")
+              && directRouteCache.has(probeKey(route, model))) {
+            return { ...resolved, input: [...resolved.input, "image"] };
+          }
+          return resolved;
+        };
+      }
+
       adapter.prepareCall = async (route, model, signal) => {
         const call = await prepare(route, model, signal);
         if (call === undefined || call === null || call.model === undefined || call.model === null) return call;
@@ -449,10 +468,31 @@ function installDispatchImageAdmission(llm, getConfig, logger) {
           // route may reject: leave the core's projection in place.
           return call;
         }
-        if (!direct) return call;
+        if (!direct) {
+          directRouteCache.delete(probeKey(route, model));
+          return call;
+        }
+        directRouteCache.add(probeKey(route, model));
+
+        // In dsh-llm-pi-ai, adapter.streamWithSnapshot checks:
+        // if (containsImage && !model.input.includes("image")) throw LlmError(...)
+        // where model is obtained via this.modelOf(snapshot, provider, model) -> snapshot.models.getModel(route, model).
+        // Ensure that the adapter snapshot's model also admits images so the adapter-level guard passes.
+        try {
+          const snapshot = typeof adapter.current === "function" ? adapter.current() : undefined;
+          const targetModel = snapshot?.models?.getModel?.(route, model);
+          if (targetModel !== undefined && targetModel !== null
+              && Array.isArray(targetModel.input) && !targetModel.input.includes("image")) {
+            targetModel.input.push("image");
+            modifiedInputs.add(targetModel.input);
+          }
+        } catch {
+          /* best-effort */
+        }
+
         return { ...call, model: { ...call.model, inputModalities: [...(mods ?? []), "image"] } };
       };
-      patched.set(adapter, rawPrepare);
+      patched.set(adapter, { prepareCall: rawPrepare, modelOf: rawModelOf });
     }
     return registration;
   };
@@ -460,10 +500,17 @@ function installDispatchImageAdmission(llm, getConfig, logger) {
   llm.registration = wrapped;
   logger?.debug?.("[tool-vision] dispatch image admission installed (llm.registration wrapped)");
   return () => {
-    for (const [adapter, prepare] of patched) {
-      if (typeof prepare === "function") adapter.prepareCall = prepare;
+    for (const [adapter, originalMethods] of patched) {
+      if (typeof originalMethods.prepareCall === "function") adapter.prepareCall = originalMethods.prepareCall;
+      if (typeof originalMethods.modelOf === "function") adapter.modelOf = originalMethods.modelOf;
     }
     patched.clear();
+    for (const arr of modifiedInputs) {
+      const idx = arr.indexOf("image");
+      if (idx !== -1) arr.splice(idx, 1);
+    }
+    modifiedInputs.clear();
+    directRouteCache.clear();
     if (llm.registration === wrapped) llm.registration = original;
     delete llm[LLM_REGISTRATION_WRAP_MARK];
   };

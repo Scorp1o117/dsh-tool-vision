@@ -382,6 +382,31 @@ the panel's picker carries a badge:
 > A route on an unknown protocol (e.g. `openai-responses`) returns `unknown`
 > with a reason, rather than guessing confidently with `chat/completions`.
 
+## v0.9.3: adapter snapshot model admission (pi-ai guard)
+
+**The bug.** `v0.9.2`'s `installDispatchImageAdmission` satisfied DSH core's
+`LlmService.generate` by declaring `image` on `adapterCall.model.inputModalities`.
+However, `dsh-llm-pi-ai`'s adapter executes a second internal guard inside its
+streaming path (`streamWithSnapshot`):
+
+```js
+const model = this.modelOf(snapshot, options.provider, options.model);
+if (containsImage && !model.input.includes("image"))
+  throw new LlmError(`pi-ai model "${model.id}" does not support image input`, "UNSUPPORTED_CONTENT");
+```
+
+`this.modelOf` resolves from the adapter's own `snapshot.models` catalog, which
+defaults to `input: ["text"]` unless the user explicitly declared
+`input: [text, image]` in `settings.yaml`. When admitted by `v0.9.2`, the raw image
+reached `streamWithSnapshot` and triggered `UNSUPPORTED_CONTENT`. Since the image
+was already in the session's durable transcript, every subsequent turn failed.
+
+**The fix.** On direct routes, `installDispatchImageAdmission` now additionally:
+1. Wraps `adapter.modelOf` (when present) to include `"image"` in `resolved.input`;
+2. Enriches the live snapshot model (`snapshot.models.getModel(route, model).input`)
+   with `"image"`;
+3. Fully restores `adapter.modelOf` and reverts modified input arrays upon dispose.
+
 ## v0.9.2: admission is not dispatch
 
 **The bug.** Every capability signal this plugin collects — `probeResults`,
