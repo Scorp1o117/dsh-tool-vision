@@ -382,6 +382,94 @@ function installAutoImageAdmission(llm, logger) {
 }
 
 /**
+ * Admission is not dispatch, and only dispatch decides whether the pixels arrive.
+ *
+ * {@link installAutoImageAdmission} wraps `llm.resolveModelInfo`. That method
+ * governs who may *offer* an image — the host gate that refuses a pasted image,
+ * the model list, the settings readout — and it is deliberately "pure admission:
+ * it never changes what the adapter actually streams".
+ *
+ * What the adapter actually streams is decided one layer down, by
+ * `LlmService.generate`:
+ *
+ *     const adapterCall = await adapter.prepareCall(provider, model, signal);
+ *     modelInfo = this.normalizeModelInfo(registration, model, adapterCall.model);
+ *     if (modelInfo.inputModalities !== undefined
+ *         && !modelInfo.inputModalities.includes("image")
+ *         && projectedMessages.some((message) => contentHasImage(message.content)))
+ *       projectedMessages = projectImagesForTextModel(projectedMessages);
+ *
+ * When that list lacks `image`, every image block is rewritten into a text
+ * placeholder (`textOnlyImageText`) *before the adapter is called*. So on a
+ * route the plugin had already measured as image-capable, and whose bridge
+ * decision was therefore "direct, do not intercept", the image was still
+ * destroyed — by a check that reads the adapter's declaration and nothing else.
+ * `probeResults`, `multimodalModels` and `autoDetectMultimodal` were all
+ * invisible to it.
+ *
+ * This wraps `llm.registration` — the accessor the core itself calls — so every
+ * adapter, including one registered later, answers `prepareCall` through
+ * {@link routeDirectDecision}: the same rule the bridge uses, so the two can
+ * never disagree about a route.
+ *
+ * When the decision is "bridge", nothing changes: the bridge already turned the
+ * image into an `inspect_image` hint, and the core's projection stays as the
+ * correct fallback for any image that still reaches dispatch.
+ *
+ * Idempotent across HMR re-applies, and dispose restores every adapter it
+ * touched plus the accessor itself.
+ */
+const LLM_REGISTRATION_WRAP_MARK = Symbol("dsh-tool-vision.registration.wrapped");
+function installDispatchImageAdmission(llm, getConfig, logger) {
+  if (llm === undefined || llm === null || typeof llm.registration !== "function") {
+    logger?.warn?.("[tool-vision] llm service unavailable; dispatch image admission not installed");
+    return () => {};
+  }
+  if (llm[LLM_REGISTRATION_WRAP_MARK]) return () => {}; // already wrapped by us (HMR re-apply)
+  const original = llm.registration.bind(llm);
+  /** adapter -> the prepareCall it had before this wrap, for dispose. */
+  const patched = new Map();
+  const wrapped = (provider) => {
+    const registration = original(provider);
+    const adapter = registration?.adapter;
+    if (adapter !== undefined && adapter !== null
+        && !patched.has(adapter) && typeof adapter.prepareCall === "function") {
+      const rawPrepare = adapter.prepareCall;
+      const prepare = rawPrepare.bind(adapter);
+      adapter.prepareCall = async (route, model, signal) => {
+        const call = await prepare(route, model, signal);
+        if (call === undefined || call === null || call.model === undefined || call.model === null) return call;
+        const mods = call.model.inputModalities;
+        if (Array.isArray(mods) && mods.includes("image")) return call;
+        let direct = false;
+        try {
+          ({ direct } = await routeDirectDecision(route, model, getConfig(), llm));
+        } catch {
+          // A decision that cannot be made is not a licence to send pixels a
+          // route may reject: leave the core's projection in place.
+          return call;
+        }
+        if (!direct) return call;
+        return { ...call, model: { ...call.model, inputModalities: [...(mods ?? []), "image"] } };
+      };
+      patched.set(adapter, rawPrepare);
+    }
+    return registration;
+  };
+  llm[LLM_REGISTRATION_WRAP_MARK] = { original, wrapped };
+  llm.registration = wrapped;
+  logger?.debug?.("[tool-vision] dispatch image admission installed (llm.registration wrapped)");
+  return () => {
+    for (const [adapter, prepare] of patched) {
+      if (typeof prepare === "function") adapter.prepareCall = prepare;
+    }
+    patched.clear();
+    if (llm.registration === wrapped) llm.registration = original;
+    delete llm[LLM_REGISTRATION_WRAP_MARK];
+  };
+}
+
+/**
  * Register the loopback route that serves bridged images to the same-origin
  * page (the preview thumbnails). Read-only and tightly scoped:
  *  - only files inside the bridge export directory (no traversal);
@@ -777,29 +865,33 @@ function warnAutoPromotion(logger) {
 }
 
 /**
- * Whether the session's current model may receive image blocks directly.
+ * Whether images may be handed to this route directly, and why.
  *
- * Two inputs, deliberately independent:
+ * The plugin's single precedence rule. Three inputs, deliberately independent:
  *
  *  - the base set — the route's own declared `inputModalities`, and only when
  *    `autoDetectMultimodal` is on. It is read through
  *    {@link unwrappedResolveModelInfo}, never through the admission wrap.
- *  - the list — `multimodalModels` under `multimodalListMode`, and the list is
- *    always explicit user intent, so it outranks the declaration: whitelist
- *    adds to the base set, blacklist subtracts from it.
+ *  - the measurement — `probeResults`, which outranks the declaration because a
+ *    probe is a real request and a declaration is only a statement.
+ *  - the list — `multimodalModels` under `multimodalListMode`. Explicit human
+ *    intent, so it outranks both: whitelist adds to the base set, blacklist
+ *    subtracts from it.
  *
- * Returns true when bridging is disabled (nothing would be bridged anyway).
+ * Two callers need this exact answer and must never disagree:
+ *  - {@link currentModelAcceptsImage} — the bridge, deciding whether to
+ *    intercept an image at all;
+ *  - {@link installDispatchImageAdmission} — the dispatch path, where the core
+ *    independently decides whether the model may receive the image block.
+ *
+ * Returns `direct: true` when bridging is disabled (nothing would be bridged
+ * anyway).
  */
-async function currentModelAcceptsImage(agent, config, llm) {
+async function routeDirectDecision(provider, model, config, llm) {
   const mode = normalizeListMode(config.multimodalListMode);
-  if (!config.bridgeTextOnly) {
-    Object.assign(lastModelDecision, { ...currentRoute(agent), direct: true, source: "bridge-off", mode });
-    return true;
-  }
-  const { provider, model } = currentRoute(agent);
-  if (!model) {
-    Object.assign(lastModelDecision, { provider, model, direct: false, source: "no-route", mode });
-    return false;
+  if (!config.bridgeTextOnly) return { direct: true, source: "bridge-off", mode };
+  if (typeof model !== "string" || model.length === 0) {
+    return { direct: false, source: "no-route", mode };
   }
   const base = config.autoDetectMultimodal
     ? await routeDeclaresImage(llm, provider, model)
@@ -823,8 +915,20 @@ async function currentModelAcceptsImage(agent, config, llm) {
     direct = mode !== "blacklist";
     source = mode === "blacklist" ? "blacklist" : "whitelist";
   }
-  Object.assign(lastModelDecision, { provider, model, direct, source, mode });
-  return direct;
+  return { direct, source, mode };
+}
+
+/**
+ * Whether the session's current model may receive image blocks directly.
+ *
+ * {@link routeDirectDecision} keyed by the session's route, with the answer
+ * recorded in {@link lastModelDecision} for the settings panel.
+ */
+async function currentModelAcceptsImage(agent, config, llm) {
+  const { provider, model } = currentRoute(agent);
+  const decision = await routeDirectDecision(provider, model, config, llm);
+  Object.assign(lastModelDecision, { provider, model, ...decision });
+  return decision.direct;
 }
 
 /**
@@ -1058,6 +1162,21 @@ function apply(ctx, config) {
           if (getConfig().bridgeAutoImage) {
             const unwrap = installAutoImageAdmission(inner.get("llm"), inner.logger);
             inner.effect(() => unwrap, "dsh-tool-vision: automatic image admission");
+          }
+
+          // ── dispatch image admission: make the capability verdict actually land ──
+          // `resolveModelInfo` above is pure admission — it never changes what
+          // the adapter streams. The image the plugin decided to hand over
+          // directly was still being projected into a text placeholder by
+          // `LlmService.generate`, which reads the adapter's own declaration and
+          // nothing else. This applies the same decision at that seam.
+          //
+          // Installed outside the `bridgeAutoImage` branch on purpose: the
+          // question it answers is not "may the image be offered" but "does the
+          // model receive it", and that is the plugin's own verdict either way.
+          {
+            const unwrapDispatch = installDispatchImageAdmission(inner.get("llm"), getConfig, inner.logger);
+            inner.effect(() => unwrapDispatch, "dsh-tool-vision: dispatch image admission");
           }
 
           // ── bridge image preview: same-origin thumbnails for bridged images ──
@@ -1314,6 +1433,7 @@ export {
   hasImageBlock,
   inject,
   installAutoImageAdmission,
+  installDispatchImageAdmission,
   lastModelDecision,
   modelListMatches,
   modelListMatchEntries,
@@ -1323,6 +1443,7 @@ export {
   probeKey,
   probeVerdict,
   registerBridgePreviewRoute,
+  routeDirectDecision,
   registerModelCatalogRoute,
   repairLoggedImages,
   resolveProbeTarget,

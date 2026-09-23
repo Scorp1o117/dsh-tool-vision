@@ -244,6 +244,47 @@ base = autoDetect ? 路由声明含 image : ∅
 
 > 未知协议的路由（如 `openai-responses`）会直接返回 `unknown` 并说明原因，而不是用 `chat/completions` 去猜一个自信的错误答案。
 
+## v0.9.2：准入不等于派发
+
+**问题**。插件收集的每一个能力信号 —— `probeResults`、`multimodalModels`、
+`autoDetectMultimodal` —— 都只决定**桥接**要不要拦截图片，没有一个决定模型**收不收得到**它。
+
+`LlmService.generate` 的能力来源是适配器，不是插件：
+
+```js
+const adapterCall = await adapter.prepareCall(provider, model, signal);
+modelInfo = this.normalizeModelInfo(registration, model, adapterCall.model);
+if (modelInfo.inputModalities !== undefined
+    && !modelInfo.inputModalities.includes("image")
+    && projectedMessages.some((message) => contentHasImage(message.content)))
+  projectedMessages = projectImagesForTextModel(projectedMessages);
+```
+
+`projectImagesForTextModel` 会在**调用适配器之前**把每个图像块改写成
+`[image omitted because this model accepts text only; attachment sha256:…]`。
+于是在一条插件已实测为「能读图」的路由上 —— 桥接因此让开放行 —— 图片依然被销毁，
+而销毁它的那个判断只读适配器的声明，不读任何别的东西。`resolveModelInfo` 那层 wrap
+（`bridgeAutoImage`）是**准入**：它决定谁可以「提交」图片，从不改变适配器实际流出的内容。
+插件里没有任何东西够到真正做决定的那一层。
+
+症状就是：一条探测结果为 `yes`、也列在 `multimodalModels` 里的路由，依然回
+`[image omitted …]`。
+
+**修复**。`installDispatchImageAdmission` 包装 `llm.registration` —— 也就是核心自己
+调用的那个访问器 —— 于是每个适配器（包括安装之后才注册的）都会经由桥接所用的**同一个**
+`routeDirectDecision` 来回答 `prepareCall`。一份优先级规则、两条缝，两者永不可能对同一
+条路由给出不同答案。判定为「走桥接」时行为不变：桥接早已把图片变成 `inspect_image`
+提示，核心的投影仍然是任何漏到派发层的图片的正确兜底。
+
+三条性质值得写下来，因为每一条都有测试：
+
+- **失败即保守**。判定无法作出时（配置抛错）保持调用原样，而不是把像素发给一条可能拒绝它的路由。
+- **可逆**。dispose 会还原它改过的每个适配器**以及**访问器本身；dispose 后再安装会重新包装。
+- **后注册的 provider 也算**。包装挂在访问器上而不是适配器快照上，所以安装之后注册的 provider 同样覆盖。
+
+`routeDirectDecision` 现在是这条优先级规则的唯一实现，桥接与派发共用 —— 两份实现必然
+漂移，而这份有三个输入。
+
 ## v0.8.0：总开关，以及保存修复
 
 **总开关。** `enabled` 字段加设置栏顶部的一键按钮（`一键关闭` / `重新启用`）。

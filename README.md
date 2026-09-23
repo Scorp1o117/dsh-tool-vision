@@ -382,6 +382,56 @@ the panel's picker carries a badge:
 > A route on an unknown protocol (e.g. `openai-responses`) returns `unknown`
 > with a reason, rather than guessing confidently with `chat/completions`.
 
+## v0.9.2: admission is not dispatch
+
+**The bug.** Every capability signal this plugin collects — `probeResults`,
+`multimodalModels`, `autoDetectMultimodal` — decided whether the *bridge*
+intercepts an image. None of them decided whether the model *receives* it.
+
+`LlmService.generate` resolves modalities from the adapter, not from the plugin:
+
+```js
+const adapterCall = await adapter.prepareCall(provider, model, signal);
+modelInfo = this.normalizeModelInfo(registration, model, adapterCall.model);
+if (modelInfo.inputModalities !== undefined
+    && !modelInfo.inputModalities.includes("image")
+    && projectedMessages.some((message) => contentHasImage(message.content)))
+  projectedMessages = projectImagesForTextModel(projectedMessages);
+```
+
+`projectImagesForTextModel` rewrites every image block into
+`[image omitted because this model accepts text only; attachment sha256:…]`
+**before the adapter is called**. So on a route the plugin had measured as
+image-capable — where the bridge therefore stepped aside and let the image
+through — the image was still destroyed, by a check that reads the adapter's
+declaration and nothing else. The `resolveModelInfo` wrap (`bridgeAutoImage`) is
+*admission*: it decides who may offer an image, and it never changes what the
+adapter streams. Nothing in the plugin reached the layer that does.
+
+The symptom is a route that probes `yes`, is listed in `multimodalModels`, and
+still answers `[image omitted …]`.
+
+**The fix.** `installDispatchImageAdmission` wraps `llm.registration` — the
+accessor the core itself calls — so every adapter, including one registered
+later, answers `prepareCall` through the same `routeDirectDecision` the bridge
+uses. One precedence rule, two seams, so the two can never disagree about a
+route. When the decision is "bridge", nothing changes: the bridge already turned
+the image into an `inspect_image` hint, and the core's projection stays as the
+correct fallback for any image that still reaches dispatch.
+
+Three properties worth stating, because each one is a test:
+
+- **Fail closed.** A decision that cannot be made (a throwing config) leaves the
+  call untouched, rather than sending pixels a route may reject.
+- **Reversible.** Dispose restores every adapter it patched *and* the accessor
+  itself; a re-install after dispose wraps again.
+- **Late providers count.** The wrap is on the accessor rather than on a snapshot
+  of adapters, so a provider registered after install is covered too.
+
+`routeDirectDecision` is now the single implementation of the precedence rule,
+shared by the bridge and the dispatch path — two copies of it would drift, and
+this one has three inputs.
+
 ## v0.8.0: master switch, and the save-path fix
 
 **Master switch.** `enabled`, plus a one-click button at the top of the section
