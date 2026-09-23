@@ -9,7 +9,7 @@ test('manifest records verified DSH latest and next without claiming alpha', () 
   const compatibility = manifest.dsh.compatibility;
   assert.equal(compatibility.dshReleases['0.1.5-rc.2'], 'compatible');
   assert.equal(compatibility.dshReleases['0.1.5-rc.3'], 'compatible');
-  for (const version of ['0.1.6-alpha.1', '0.1.6-alpha.2', '0.1.7-alpha.1']) {
+  for (const version of ['0.1.6-alpha.1', '0.1.6-alpha.2', '0.1.7-alpha.1', '0.1.7-alpha.2']) {
     assert.equal(compatibility.dshReleases[version], 'unknown');
   }
   assert.equal(compatibility.node, manifest.engines.node);

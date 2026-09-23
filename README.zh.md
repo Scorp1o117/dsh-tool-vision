@@ -17,12 +17,15 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 - 注册在**全局工具层**：进程内所有 Agent 都能调用 `inspect_image`。
 - **Web UI 设置栏（v0.3.0）**：设置 → 视觉模型 编辑 `tool-vision` 命名空间（API 地址、只写密钥、模型、桥接选项），写入 `settings.yaml`，**改动即时生效无需重启**。API 密钥存放在 `settings.yaml` 而非 profile patch；插件按包名挂载（`name: 'dsh-tool-vision'`）以便 web 端发现客户端 bundle。
 
-## 兼容性（v0.9.1）
+## 兼容性（v0.9.4）
 
-已在 DSH `0.1.5-rc.3`（`next`）的一次性 Web Profile 中验证；`0.1.5-rc.2`
-仍是 `latest`。rc.3 宿主目前引用尚未发布的
-`dsh-client-ui-sidebar-documentpreview@0.1.5-rc.3`，烟测仅将这一无关的 UI
-包临时回退为 rc.2；rc.3 原样安装仍受上游阻塞。alpha 版本继续标记 `unknown`。
+DSH `0.1.5-rc.3` 现为 npm 的 `latest` 和 `next`。alpha 版本未经验证前继续标记 `unknown`。
+
+## v0.9.4：修复 Windows 图片桥导出文件名
+
+- 导出文件名改为从完整附件 ID 生成稳定哈希；`sha256:...` 等 ID 不再写入 NTFS 备用数据流，避免出现可见主文件为 0 字节的情况。
+- 写入前确保导出目录存在；进程内缓存按 `bridgeExportDir` 区分。
+- 已通过 DSH `0.1.5-rc.3` 一次性 Profile 的安装、Web 启动、首页与客户端 Bundle HTTP 检查，以及卸载验证。
 
 ## 安装
 
@@ -59,7 +62,7 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 | `maxImageBytes` | `10MB` | 本地图片大小上限 |
 | `description` | 默认描述 | 工具描述（模型可见） |
 | `bridgeTextOnly` | `true` | 把粘贴图片转成文本指引（发给看不懂图片的模型时） |
-| `bridgeExportDir` | 临时目录 | 桥接图片导出目录（`os.tmpdir()/dsh-vision-bridge`） |
+| `bridgeExportDir` | 临时目录 | 桥接图片导出目录（`os.tmpdir()/dsh-vision-bridge`）；文件名使用附件 ID 的安全哈希 |
 | `multimodalModels` | `[]` | 模型名单（逗号分隔）。每项按「完整 id / 末段裸 id / `provider/id`」三种写法匹配，大小写不敏感，支持 `*` `?` 通配（如 `*vl*`、`deepseek/*`）。含义由下面的模式决定 |
 | `multimodalListMode` | `whitelist` | **名单模式（v0.9.0）**：`whitelist` 名单内模型直收图片块（旧行为）；`blacklist` 名单内模型强制走桥接（用来纠正"声明支持图片但实际不支持"的模型）；`off` 忽略名单。未知值一律回退 `whitelist` |
 | `autoDetectMultimodal` | `true` | **自动识别（v0.9.0）**：按当前路由自己声明的 `inputModalities` 判定，再与名单合成（白名单取并集、黑名单取差集）。默认开启＝识别到纯文本就交给桥接、识别到多模态就等同白名单成员直发图片；声明永远读"包装前"的真值，不会被 `bridgeAutoImage` 的假声明污染。设为 `false` 可退回"只认名单"的纯手工行为 |

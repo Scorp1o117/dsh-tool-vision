@@ -48,6 +48,7 @@
  *      model-facing text and the `inspect_image` chain are untouched.
  */
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { extname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import os from "node:os";
 import z from "@deepseek-ai/schemastery";
@@ -262,7 +263,8 @@ function deepFreeze(value) {
 /** Export one attachment to disk; returns the file path (cached per process). */
 const exportedPaths = new Map();
 async function exportImage(attachment, ctx, dir) {
-  const cached = exportedPaths.get(attachment.attachmentId);
+  const cacheKey = `${resolvePath(dir)}\0${attachment.attachmentId}`;
+  const cached = exportedPaths.get(cacheKey);
   if (cached) return cached;
   const { data } = await ctx.attachments.readImage(attachment);
   const ext = EXT_BY_MEDIA[attachment.mediaType] ?? ".img";
@@ -273,10 +275,15 @@ async function exportImage(attachment, ctx, dir) {
         .replace(/^_+|_+$/g, "")
         .slice(0, 40)
     : "";
-  const base = (safeName ? `${safeName}_` : "") + attachment.attachmentId.slice(0, 12);
+  // Attachment IDs such as `sha256:...` contain a colon. On Windows that
+  // addresses an alternate data stream and leaves a zero-byte visible file.
+  // Hash the complete ID to keep the filename portable and collision-resistant.
+  const idTag = createHash("sha256").update(attachment.attachmentId).digest("hex").slice(0, 24);
+  const base = (safeName ? `${safeName}_` : "") + idTag;
   const path = join(dir, `${base}${ext}`);
+  await mkdir(dir, { recursive: true });
   await writeFile(path, data);
-  exportedPaths.set(attachment.attachmentId, path);
+  exportedPaths.set(cacheKey, path);
   return path;
 }
 

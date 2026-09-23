@@ -42,13 +42,16 @@ bridge keeps its conversion inside that durable path:
   key lives in `settings.yaml`, not the profile patch. Mount by package name
   (`name: 'dsh-tool-vision'`) so the web client bundle is discovered.
 
-## Compatibility (v0.9.1)
+## Compatibility (v0.9.4)
 
-Verified in a DSH `0.1.5-rc.3` (`next`) disposable Web profile; DSH
-`0.1.5-rc.2` remains `latest`. The rc.3 host currently references an
-unpublished `dsh-client-ui-sidebar-documentpreview@0.1.5-rc.3`, so the smoke
-profile temporarily used that unrelated UI package at rc.2. A clean rc.3
-installation is blocked upstream. Alpha releases remain `unknown`.
+DSH `0.1.5-rc.3` is the current npm `latest` and `next`. Alpha releases remain
+`unknown` until tested.
+
+## v0.9.4: Windows bridge export filenames
+
+- Export filenames now derive from a stable hash of the complete attachment ID. IDs such as `sha256:...` no longer create NTFS alternate data streams and zero-byte visible files.
+- The export directory is created before writing; the in-process cache now respects changes to `bridgeExportDir`.
+- Passed install, Web boot, homepage and client-bundle HTTP checks, and uninstall in a disposable DSH `0.1.5-rc.3` Profile.
 
 ## Install
 
@@ -85,7 +88,7 @@ Or load it from a local path without npm:
 | `maxImageBytes` | `10MB` | Largest accepted local image. |
 | `description` | default | Tool description shown to the model. |
 | `bridgeTextOnly` | `true` | Bridge pasted images to text hints on models that cannot see images. |
-| `bridgeExportDir` | temp | Export dir for bridged images (`os.tmpdir()/dsh-vision-bridge`). |
+| `bridgeExportDir` | temp | Export dir for bridged images (`os.tmpdir()/dsh-vision-bridge`). Filenames use a portable hash of the attachment ID. |
 | `multimodalModels` | `[]` | Model list (comma-separated). Each entry is matched case-insensitively against the full id, its bare id after the last `/`, and `provider/id`, with `*` / `?` globs (`*vl*`, `deepseek/*`). What the list *means* is set by the mode below. |
 | `multimodalListMode` | `whitelist` | **List mode (v0.9.0).** `whitelist`: listed models receive image blocks directly (the historical behaviour). `blacklist`: listed models are forced through the bridge — the correction layer for a model that claims image support it does not have. `off`: the list is ignored. An unknown value falls back to `whitelist`. |
 | `autoDetectMultimodal` | `true` | **Auto-detect (v0.9.0).** Decide from the current route's own declared `inputModalities`, then combine with the list (whitelist unions, blacklist subtracts). On by default: a text-only route is bridged, a multimodal one is treated like a whitelist member and gets images directly. The declaration is always read *before* this plugin's admission wrap, so `bridgeAutoImage` can never feed its own claim back in as evidence. Set false for the hand-maintained "list only" behaviour. |
