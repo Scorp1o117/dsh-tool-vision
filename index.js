@@ -221,7 +221,7 @@ const Config = z.object({
   /** Fixed session id override for callers without a dsh session context.
    * Empty = auto (per-process stable id). */
   sessionId: z.string().default(""),
-});
+}).volatile();
 
 const MIME_BY_EXT = {
   ".png": "image/png",
@@ -1165,7 +1165,7 @@ function apply(ctx, config) {
   // would be undefined (apiKey included).
   let current = config;
   let sourceGetter = null;
-  const getConfig = () => (sourceGetter ? sourceGetter() : current);
+  const getConfig = () => (sourceGetter ? sourceGetter() : typeof current.get === "function" ? current.get() : current);
   // The registered settings scope, kept so tools can PERSIST what they measure.
   // Null whenever no settings provider is mounted (composition-entry-only runs),
   // in which case a probe still reports its verdict but cannot record it.
@@ -1435,22 +1435,12 @@ function apply(ctx, config) {
   // `installSettingsSection` export (the provider now lives at ctx.settings).
   // Inline the same logic via ctx.inject(["settings"]) — works on both
   // 0.1.1 (module export wrapper) and 0.1.2 (ctx.settings) hosts.
-  ctx.inject(["settings"], (sctx) => {
-    const scope = sctx.settings.register(NS, Config, { base: config });
-    sourceGetter = () => scope.get();
-    settingsScope = scope;
-    sctx.effect(() => () => {
-      sourceGetter = null;
-      settingsScope = null;
-    });
-    // Hot-apply: `enabled` switches the child fiber, and any field that gates a
-    // registration re-installs it, so none of them needs a dsh restart anymore.
-    scope.watch(() => syncFeatures());
-    sctx.effect(() => () => uninstallFeatures());
-    // The stored value governs from here on; the composition entry was only a
-    // placeholder until the provider answered.
-    syncFeatures();
+  sourceGetter = () => typeof config.get === "function" ? config.get() : config;
+  settingsScope = { update: (patch) => ctx.settings.update(NS, patch) };
+  ctx.on("settings/document-updated", (id) => {
+    if (id === NS) syncFeatures();
   });
+  ctx.effect(() => () => uninstallFeatures());
 
   // ── model catalog route: settings support, so it lives on THIS fiber ───────
   // The master switch disposes the feature fiber on purpose (tools, bridge,

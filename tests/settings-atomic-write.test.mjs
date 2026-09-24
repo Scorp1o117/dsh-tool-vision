@@ -40,14 +40,11 @@ test('the master switch is a hot child fiber, not a restart-time flag', () => {
   assert.match(hostSource, /attachPreStepBridge\(inner, getConfig, exportDir\)/);
 });
 
-test('the settings registration outlives the switch it controls', () => {
-  // It stays on the parent fiber: if it were disposed with the features, the
-  // section that turns the plugin back on would vanish with them.
-  assert.match(hostSource, /ctx\.inject\(\["settings"\], \(sctx\) => \{/);
-  assert.match(hostSource, /sctx\.effect\(\(\) => \(\) => uninstallFeatures\(\)\)/);
-  const rejectAt = hostSource.indexOf('installAutoImageAdmission(inner.get("llm")');
-  const settingsAt = hostSource.indexOf('sctx.settings.register(');
-  assert.ok(rejectAt > 0 && settingsAt > 0);
+test('the profile settings form outlives the feature switch', () => {
+  assert.match(hostSource, /\}\)\.volatile\(\)/);
+  assert.match(hostSource, /ctx\.effect\(\(\) => \(\) => uninstallFeatures\(\)\)/);
+  assert.match(hostSource, /settingsScope = \{ update: \(patch\) => ctx\.settings\.update\(NS, patch\) \}/);
+  assert.match(clientSource, /ctx\.configForms\.get\("tool-vision"\)/);
 });
 
 test('registration-gating fields re-install the child fiber', () => {
@@ -55,7 +52,7 @@ test('registration-gating fields re-install the child fiber', () => {
   for (const key of ['enabled', 'bridgeTextOnly', 'bridgeExportDir', 'bridgeAutoImage', 'bridgePreview']) {
     assert.ok(hostSource.includes(`"${key}"`), `missing gating key ${key}`);
   }
-  assert.match(hostSource, /scope\.watch\(\(\) => syncFeatures\(\)\)/);
+  assert.match(hostSource, /if \(id === NS\) syncFeatures\(\)/);
 });
 
 test('the one-click switch writes only the enabled field', () => {

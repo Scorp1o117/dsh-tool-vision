@@ -72,7 +72,7 @@ window.__ModuleLoader__.load({
 
     // ── locale ────────────────────────────────────────────────────────────
     var NS = "toolVision";
-    var inject = ["slots", "locale", "settingsScope"];
+    var inject = ["slots", "locale", "configForms"];
     var zh = {
       nav: "视觉模型",
       intro: "外置视觉模型配置：Agent 通过 inspect_image 工具把图片发给该端点分析。修改后即时生效（settings.yaml 热重载）。",
@@ -939,7 +939,7 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       var t = ctx.locale.bind(NS);
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "dsh-tool-vision: dictionaries");
-      var scope = ctx.settingsScope.bind({ namespace: "tool-vision" });
+      var scope = ctx.configForms.get("tool-vision");
       attachBridgePreview(ctx, scope);
       ctx.slots.inject("settings.section", function () {
         return ctx.slots.register({

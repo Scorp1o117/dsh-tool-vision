@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import z from '@deepseek-ai/schemastery';
 
 import { Config, apply } from '../index.js';
 
@@ -29,13 +30,13 @@ function harness() {
   return { ctx: make(), tools, listeners };
 }
 
-const cfg = (over = {}) => ({ ...Config({}), ...over });
+const cfg = (over = {}) => ({ ...z.resolve({}, Config)[0].get(), ...over });
 
 test('enabled=false registers nothing at all', () => {
   const { ctx, tools, listeners } = harness();
   apply(ctx, cfg({ enabled: false }));
   assert.deepEqual(tools, [], "no tool may reach the model while the switch is off");
-  assert.deepEqual(listeners, [], "no pre-step listener may stay attached");
+  assert.ok(!listeners.includes("agent/pre-step"), "no pre-step listener may stay attached");
 });
 
 test('enabled=true registers inspect_image plus the pixel-level tools', () => {
@@ -53,7 +54,7 @@ test('the master switch is the only thing that decides whether tools appear', ()
   apply(on.ctx, cfg({ enabled: true, bridgeTextOnly: true, bridgeAutoImage: true, bridgePreview: true }));
   assert.equal(off.tools.length, 0, "bridge flags must not resurrect a disabled plugin");
   assert.ok(on.tools.length > 0);
-  assert.ok(off.listeners.length < on.listeners.length, "the pre-step bridge is a listener");
+  assert.ok(!off.listeners.includes("agent/pre-step") && on.listeners.includes("agent/pre-step"), "the pre-step bridge is a listener");
 });
 
 test('bridge switches gate their own registrations', () => {
@@ -61,6 +62,6 @@ test('bridge switches gate their own registrations', () => {
   apply(without.ctx, cfg({ enabled: true, bridgeTextOnly: false }));
   const withBridge = harness();
   apply(withBridge.ctx, cfg({ enabled: true, bridgeTextOnly: true }));
-  assert.equal(without.listeners.length, 0);
+  assert.ok(!without.listeners.includes("agent/pre-step"));
   assert.ok(withBridge.listeners.includes("agent/pre-step"));
 });

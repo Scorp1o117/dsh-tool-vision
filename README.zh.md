@@ -15,11 +15,11 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 
 - 除 dsh SDK 外零依赖 —— 兼容任意端点：OpenAI GPT-4o、Qwen-VL（DashScope）、GLM-4V（智谱）、Moonshot、Gemini 兼容端点、本地 Ollama 等。
 - 注册在**全局工具层**：进程内所有 Agent 都能调用 `inspect_image`。
-- **Web UI 设置栏（v0.3.0）**：设置 → 视觉模型 编辑 `tool-vision` 命名空间（API 地址、只写密钥、模型、桥接选项），写入 `settings.yaml`，**改动即时生效无需重启**。API 密钥存放在 `settings.yaml` 而非 profile patch；插件按包名挂载（`name: 'dsh-tool-vision'`）以便 web 端发现客户端 bundle。
+- **Web UI 设置栏（v0.3.0）**：设置 → 视觉模型 编辑 `tool-vision` 配置（API 地址、只写密钥、模型、桥接选项），写入当前 Profile patch，**改动即时生效无需重启**。插件按包名挂载（`name: 'dsh-tool-vision'`）以便 web 端发现客户端 bundle。
 
-## 兼容性（v0.9.4）
+## 兼容性（v0.9.5）
 
-DSH `0.1.5-rc.3` 现为 npm 的 `latest` 和 `next`。alpha 版本未经验证前继续标记 `unknown`。
+适配 DSH `0.1.7-rc.1`（npm `next`）；npm `latest` 是 `0.1.5-rc.3`。旧宿主请使用插件旧版；alpha 构建仍标记 `unknown`。
 
 ## v0.9.4：修复 Windows 图片桥导出文件名
 

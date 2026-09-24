@@ -38,14 +38,15 @@ bridge keeps its conversion inside that durable path:
   call `inspect_image`.
 - **Web UI settings section (v0.3.0)**: Settings → 视觉模型 edits the
   `tool-vision` namespace (API endpoint, write-only key, model, bridge
-  options) in `settings.yaml`; changes hot-apply without a restart. The API
-  key lives in `settings.yaml`, not the profile patch. Mount by package name
+  options) in the active Profile patch; changes hot-apply without a restart. The API
+  key lives in that patch. Mount by package name
   (`name: 'dsh-tool-vision'`) so the web client bundle is discovered.
 
-## Compatibility (v0.9.4)
+## Compatibility (v0.9.5)
 
-DSH `0.1.5-rc.3` is the current npm `latest` and `next`. Alpha releases remain
-`unknown` until tested.
+Targets DSH `0.1.7-rc.1` (`next`); npm `latest` is `0.1.5-rc.3`.
+This version uses Profile patch settings and browser `configForms`.
+Older hosts require an older plugin release. Alpha builds remain `unknown`.
 
 ## v0.9.4: Windows bridge export filenames
 
@@ -400,7 +401,7 @@ if (containsImage && !model.input.includes("image"))
 
 `this.modelOf` resolves from the adapter's own `snapshot.models` catalog, which
 defaults to `input: ["text"]` unless the user explicitly declared
-`input: [text, image]` in `settings.yaml`. When admitted by `v0.9.2`, the raw image
+`input: [text, image]` in the Profile patch. When admitted by `v0.9.2`, the raw image
 reached `streamWithSnapshot` and triggered `UNSUPPORTED_CONTENT`. Since the image
 was already in the session's durable transcript, every subsequent turn failed.
 

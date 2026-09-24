@@ -12,6 +12,7 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import z from '@deepseek-ai/schemastery'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,7 +39,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const server = readFileSync(join(root, 'index.js'), 'utf8')
 const client = readFileSync(join(root, 'client.js'), 'utf8')
 
-const cfg = (over = {}) => ({ ...Config({}), ...over })
+const cfg = (over = {}) => ({ ...z.resolve({}, Config)[0].get(), ...over })
 /** The exact configuration v0.8.1 behaved as: no detection, list means direct. */
 const legacyCfg = (over = {}) => cfg({ autoDetectMultimodal: false, multimodalListMode: 'whitelist', ...over })
 const agent = (provider, model) => ({ session: { requestHeader: () => ({ config: { provider, model } }) } })
@@ -51,7 +52,7 @@ test('Config carries the v0.9.0 fields', () => {
   assert.equal(Config.dict.multimodalListMode.meta.default, 'whitelist')
   assert.equal(Config.dict.autoDetectMultimodal.meta.default, true, 'detection drives the bridge by default')
   assert.deepEqual(Config.dict.multimodalModels.meta.default, [])
-  assert.equal(normalizeListMode(Config({}).multimodalListMode), 'whitelist')
+  assert.equal(normalizeListMode(cfg().multimodalListMode), 'whitelist')
   // "Off" must remain reachable: it is the behaviour every pre-0.9 config had.
   const legacy = cfg({ autoDetectMultimodal: false, multimodalListMode: 'whitelist', multimodalModels: [] })
   assert.equal(legacy.autoDetectMultimodal, false)
