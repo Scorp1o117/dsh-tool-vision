@@ -10,6 +10,7 @@ test('manifest records verified DSH latest and next without claiming alpha', () 
   assert.equal(compatibility.dshReleases['0.1.5-rc.2'], 'incompatible');
   assert.equal(compatibility.dshReleases['0.1.5-rc.3'], 'incompatible');
   assert.equal(compatibility.dshReleases['0.1.7-rc.1'], 'compatible');
+  assert.equal(compatibility.dshReleases['0.1.7-rc.2'], 'compatible');
   for (const version of ['0.1.6-alpha.1', '0.1.6-alpha.2', '0.1.7-alpha.1', '0.1.7-alpha.2']) {
     assert.equal(compatibility.dshReleases[version], 'unknown');
   }

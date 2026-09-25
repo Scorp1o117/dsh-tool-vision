@@ -42,9 +42,9 @@ bridge keeps its conversion inside that durable path:
   key lives in that patch. Mount by package name
   (`name: 'dsh-tool-vision'`) so the web client bundle is discovered.
 
-## Compatibility (v0.9.5)
+## Compatibility (v0.9.6)
 
-Targets DSH `0.1.7-rc.1` (`next`); npm `latest` is `0.1.5-rc.3`.
+Tested with DSH `0.1.7-rc.1` and `0.1.7-rc.2` (`next`); npm `latest` is `0.1.5-rc.3`.
 This version uses Profile patch settings and browser `configForms`.
 Older hosts require an older plugin release. Alpha builds remain `unknown`.
 

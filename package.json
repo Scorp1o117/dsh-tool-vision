@@ -1,6 +1,6 @@
 {
     "name": "dsh-tool-vision",
-    "version": "0.9.5",
+    "version": "0.9.6",
     "description": "DeepSeek Harness 外置视觉模型插件：inspect_image 把本地图片或 http(s) 图片 URL 发给任意 OpenAI 兼容端点，视觉模型看图的文字回答直接带回对话；附 Web UI 设置栏。",
     "type": "module",
     "main": "index.js",
@@ -29,7 +29,8 @@
                 "0.1.6-alpha.2": "unknown",
                 "0.1.7-alpha.1": "unknown",
                 "0.1.7-alpha.2": "unknown",
-                "0.1.7-rc.1": "compatible"
+                "0.1.7-rc.1": "compatible",
+                "0.1.7-rc.2": "compatible"
             },
             "node": ">=20.18",
             "profiles": [
@@ -85,6 +86,9 @@
         "sharp": ">=0.35.3 <1"
     },
     "devDependencies": {
+        "@deepseek-ai/dsh": "0.1.7-rc.2",
+        "@deepseek-ai/dsh-settings": "0.1.7-rc.2",
+        "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
         "jsdom": "^30.0.1",
         "react": "^18.3.1",
         "react-dom": "^18.3.1"
