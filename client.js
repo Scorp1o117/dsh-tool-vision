@@ -941,12 +941,10 @@ window.__ModuleLoader__.load({
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "dsh-tool-vision: dictionaries");
       var scope = ctx.configForms.get("tool-vision");
       attachBridgePreview(ctx, scope);
-      ctx.slots.inject("settings.section", function () {
+      ctx.slots.inject("plugins.bundle.config", function () {
         return ctx.slots.register({
-          name: "settings.section",
-          id: "tool-vision",
-          order: 25,
-          label: function () { return t("nav"); },
+          name: "plugins.bundle.config",
+          key: "dsh-tool-vision",
           locale: NS
         }, function (props) {
           return h(VisionSection, Object.assign({}, props, { scope: scope }));

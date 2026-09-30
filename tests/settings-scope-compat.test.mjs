@@ -9,8 +9,8 @@ test('manifest records verified DSH latest and next without claiming alpha', () 
   const compatibility = manifest.dsh.compatibility;
   assert.equal(compatibility.dshReleases['0.1.5-rc.2'], 'incompatible');
   assert.equal(compatibility.dshReleases['0.1.5-rc.3'], 'incompatible');
-  assert.equal(compatibility.dshReleases['0.1.7-rc.1'], 'compatible');
-  assert.equal(compatibility.dshReleases['0.1.7-rc.2'], 'compatible');
+  assert.equal(compatibility.dshReleases['0.1.7-rc.1'], "incompatible");
+  assert.equal(compatibility.dshReleases['0.1.7-rc.2'], "incompatible");
   assert.equal(compatibility.dshReleases['0.2.0-rc.2'], 'compatible');
   for (const version of ['0.1.6-alpha.1', '0.1.6-alpha.2', '0.1.7-alpha.1', '0.1.7-alpha.2']) {
     assert.equal(compatibility.dshReleases[version], 'unknown');
@@ -49,7 +49,7 @@ test('section unmount must not dispose the plugin-shared settings scope', () => 
 test('package requires the DSH configForms host', () => {
   for (const [name, range] of Object.entries(manifest.peerDependencies)) {
     if (!name.startsWith('@deepseek-ai/dsh-')) continue;
-    assert.equal(range, '^0.1.7-rc.1 || 0.2.0-rc.2');
+    assert.equal(range, '>=0.2.0-rc.2 <0.3.0');
   }
 });
 

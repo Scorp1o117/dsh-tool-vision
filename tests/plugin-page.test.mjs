@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+import vm from 'node:vm';
+const manifest=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
+const source=await readFile(new URL('../client.js',import.meta.url),'utf8');
+test('the installed plugin opens its own configuration from the Plugins page',()=>{
+  let bundle;vm.runInNewContext(source,{window:{__ModuleLoader__:{load(value){bundle=value}}},setInterval(){},clearInterval(){},setTimeout(){},clearTimeout(){},console});
+  const bindings=[],entries=[];const scope={getSnapshot:()=>({status:'ready',writable:true,value:{}}),subscribe:()=>()=>{}};
+  const plugin=bundle.factory(name=>{assert.equal(name,'react');return {createElement:(type,props,...children)=>({type,props,children})}});
+  plugin.apply({locale:{bind:()=>key=>key,register:()=>()=>{}},effect:(fn,label)=>label==="dsh-tool-vision: bridge preview scanner"?()=>{}:fn(),configForms:{get:ns=>{bindings.push(ns);return scope}},connection:{},slots:{inject:(_name,fn)=>fn(),register:(options,render)=>{entries.push({options,render});return ()=>{}}}});
+  const page=entries.find(entry=>entry.options.name==='plugins.bundle.config');
+  assert.ok(page,'community configuration must use the bundle configuration slot');
+  assert.equal(page.options.key,manifest.name,'the key must match the installed npm bundle');
+  assert.equal(entries.some(entry=>entry.options.name==='settings.section'),false,'configuration must not remain in global settings');
+  assert.equal(bindings.length,1,'one shared form owns the namespace revision');
+  const node=page.render({view:'page',t:key=>key});assert.equal(typeof node.type,'function');assert.equal(node.props.scope,scope);
+  if(manifest.name==='dsh-soul-md')assert.ok(entries.some(entry=>entry.options.id==='soul-md-persona'),'retain the conversation persona switcher');
+  assert.ok(manifest.files.includes('client.js'));assert.equal(manifest.dsh.client.platform,'web');
+});

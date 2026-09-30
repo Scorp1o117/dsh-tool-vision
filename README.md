@@ -1,5 +1,9 @@
 # dsh-tool-vision
 
+## Configuration page (DSH 0.2.0-rc.2 and later)
+
+Open **Plugins → Installed → dsh-tool-vision** from the homepage sidebar to configure and save this plugin. The page uses the official `plugins.bundle.config` interface, without a duplicate entry in global Settings. Web and Desktop share the page. This version requires DSH 0.2.0-rc.2 or a later 0.2.x host; existing configuration is retained.
+
 [![中文文档](https://img.shields.io/badge/%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-blue)](README.zh.md)
 
 **GitHub**: [Scorp1o117/dsh-tool-vision](https://github.com/Scorp1o117/dsh-tool-vision) · **npm**: [dsh-tool-vision](https://www.npmjs.com/package/dsh-tool-vision)
@@ -274,7 +278,7 @@ did nothing on a route spelled `xiaomi/mimo-v2.5` — fixed here, and the fix on
 ever *adds* models to the direct set (no entry that used to force a model direct
 stops doing so).
 
-**In the panel** (Settings → Vision Model):
+**In the panel** (Plugins → dsh-tool-vision Model):
 
 - the list field is followed by a **clickable list of the models dsh actually has
   configured** (`llm.listProviders()` + `llm.listModels()`), grouped by provider

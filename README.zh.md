@@ -1,5 +1,9 @@
 # dsh-tool-vision
 
+## 配置入口（DSH 0.2.0-rc.2 起）
+
+在首页侧边栏打开 **插件 → 已安装 → dsh-tool-vision**，直接在插件详情页配置并保存。配置页注册到官方的 `plugins.bundle.config` 接口；全局设置页不再重复显示配置入口。Web 与桌面版使用相同界面，本版要求 DSH 0.2.0-rc.2 或更新的 0.2.x 版本。现有配置无需迁移。
+
 **GitHub**: [Scorp1o117/dsh-tool-vision](https://github.com/Scorp1o117/dsh-tool-vision) · **npm**: [dsh-tool-vision](https://www.npmjs.com/package/dsh-tool-vision) · [English](README.md)
 
 [![Enhancement Suite](https://img.shields.io/badge/part%20of-Enhancement%20Suite-3964fe)](https://github.com/Scorp1o117/dsh-enhancement-suite) [![npm](https://img.shields.io/npm/v/dsh-enhancement-suite)](https://www.npmjs.com/package/dsh-enhancement-suite)
@@ -15,7 +19,7 @@ DSH 0.1.1 已为 DeepSeek 视觉模型目录加入原生图片输入。本插件
 
 - 除 dsh SDK 外零依赖 —— 兼容任意端点：OpenAI GPT-4o、Qwen-VL（DashScope）、GLM-4V（智谱）、Moonshot、Gemini 兼容端点、本地 Ollama 等。
 - 注册在**全局工具层**：进程内所有 Agent 都能调用 `inspect_image`。
-- **Web UI 设置栏（v0.3.0）**：设置 → 视觉模型 编辑 `tool-vision` 配置（API 地址、只写密钥、模型、桥接选项），写入当前 Profile patch，**改动即时生效无需重启**。插件按包名挂载（`name: 'dsh-tool-vision'`）以便 web 端发现客户端 bundle。
+- **Web UI 设置栏（v0.3.0）**：插件 → dsh-tool-vision 编辑 `tool-vision` 配置（API 地址、只写密钥、模型、桥接选项），写入当前 Profile patch，**改动即时生效无需重启**。插件按包名挂载（`name: 'dsh-tool-vision'`）以便 web 端发现客户端 bundle。
 
 ## 兼容性（v0.9.7）
 
@@ -199,7 +203,7 @@ blacklist  → direct = base \ 名单        名单只做"减"
 
 **匹配规则**：`mimo-v2.5`、`xiaomi/mimo-v2.5`、`commandcode/xiaomi/mimo-v2.5` 指向同一个路由；`*` / `?` 为通配符；大小写不敏感。v0.8.1 只做字符串全等，README 自己举的 `mimo-v2.5` 例子在 `xiaomi/mimo-v2.5` 这类路由上其实**静默无效**，v0.9.0 修好了（只会多放行，不会收回任何旧配置已经放行的模型）。
 
-**面板**（设置 → 视觉模型）：
+**面板**（插件 → dsh-tool-vision）：
 
 - 名单字段下面是一份**可直接勾选的模型清单**：候选来自 dsh 已配置的模型（`llm.listProviders()` + `llm.listModels()`），按 provider 分组，标注哪些**声明**支持图片；勾选加入、取消勾选移出，上方输入框仍可手打通配符（两者共用同一份草稿，改完按「保存」生效，未保存时清单头部会标"未保存"）；
 - 顶部常驻**当前路由判定**：`provider / model`、直发还是桥接、依据是什么（名单命中 / 自动识别 / 默认）。
