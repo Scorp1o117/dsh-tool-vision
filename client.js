@@ -61,6 +61,37 @@ window.__ModuleLoader__.load({
       ".__tv_itemId{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".__tv_itemName{color:var(--dsw-alias-label-tertiary);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%}" +
       ".__tv_unavailable{font-size:13px;color:var(--dsw-alias-label-tertiary)}";
+    // Scoped flat controls retain native keyboard and form behavior.
+    CSS += `
+.dsh-flat.__tv_root{width:100%;max-width:720px;gap:14px;font-size:13px;line-height:1.65;color:var(--dsw-alias-label-primary);--flat-accent:var(--dsw-alias-state-business-primary,#3964fe);--flat-border:var(--dsw-alias-border-l2,#dce2eb)}
+.dsh-flat.__tv_root *{box-sizing:border-box;min-width:0}
+.dsh-flat.__tv_root p{margin:0}
+.dsh-flat.__tv_root label[class$="_field"]{gap:7px}
+.dsh-flat.__tv_root [class$="_label"]{font-size:13px;font-weight:500}
+.dsh-flat.__tv_root [class$="_hint"]{font-size:12px;line-height:1.65}
+.dsh-flat.__tv_root input:not([type=checkbox]),.dsh-flat.__tv_root select,.dsh-flat.__tv_root textarea{width:100%;border:1px solid var(--flat-border);border-radius:6px;background:var(--dsw-alias-bg-layer-3);color:inherit;font:inherit;padding:9px 12px;min-height:40px;box-shadow:none;transition:border-color .15s}
+.dsh-flat.__tv_root input:hover:not(:disabled),.dsh-flat.__tv_root select:hover:not(:disabled),.dsh-flat.__tv_root textarea:hover:not(:disabled){border-color:var(--dsw-alias-label-tertiary)}
+.dsh-flat.__tv_root select{appearance:none;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m2 2 4 4 4-4' fill='none' stroke='%23778091' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.dsh-flat.__tv_root input[type=checkbox]{appearance:none;flex:none;width:30px;height:18px;margin:0;border:1px solid var(--flat-border);border-radius:12px;background:var(--dsw-alias-bg-layer-2);position:relative;cursor:pointer;transition:background .15s,border-color .15s}
+.dsh-flat.__tv_root input[type=checkbox]::before{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-label-secondary);transition:transform .15s}
+.dsh-flat.__tv_root input[type=checkbox]:checked{background:var(--flat-accent);border-color:var(--flat-accent)}
+.dsh-flat.__tv_root input[type=checkbox]:checked::before{transform:translateX(12px);background:#fff}
+.dsh-flat.__tv_root :is(input,select,textarea,button,summary,a):focus-visible{outline:2px solid var(--flat-accent);outline-offset:3px}
+.dsh-flat.__tv_root :is(input,select,textarea,button):disabled{opacity:.5;cursor:default}
+.dsh-flat.__tv_root [class$="_actions"]{flex-wrap:wrap;gap:10px;margin-top:4px;padding-top:16px;border-top:1px solid var(--flat-border)}
+.dsh-flat.__tv_root details{border-top:1px solid var(--flat-border);padding:0}
+.dsh-flat.__tv_root summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;font-size:13px;font-weight:500;cursor:pointer;color:var(--dsw-alias-label-secondary)}
+.dsh-flat.__tv_root summary::-webkit-details-marker{display:none}
+.dsh-flat.__tv_root summary::after{content:"+";font-size:18px;font-weight:400;flex:none}
+.dsh-flat.__tv_root details[open]>summary::after{content:"−"}
+.dsh-flat.__tv_root details>div{padding-bottom:18px}
+.dsh-flat.__tv_root .__tv_master{padding:0 0 16px;margin:0;border:0;border-bottom:1px solid var(--flat-border);border-radius:0;background:none}
+.dsh-flat.__tv_root .__tv_catalog{padding:0;border:0;background:none;gap:8px}
+@media(max-width:480px){.dsh-flat.__tv_root{gap:16px}.dsh-flat.__tv_root .__tv_master{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.dsh-flat.__tv_root *,.dsh-flat.__tv_root input[type=checkbox]::before{transition:none}}
+.dsh-flat.__tv_root button:not(.__tv_link){border-radius:6px;min-height:34px;padding:7px 14px;font:inherit;font-size:12px;box-shadow:none}
+.dsh-flat.__tv_root :is(h2,h3){margin:0;font-size:14px;font-weight:600}
+`;
     var tagId = "dsh-tool-vision/main.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
       var tag = document.createElement("style");
@@ -724,7 +755,7 @@ window.__ModuleLoader__.load({
             hint
           );
       }
-      return h("div", { className: "__tv_root" },
+      return h("div", { className: "__tv_root dsh-flat" },
         h("p", { className: "__tv_hint", style: { margin: "0 0 4px" } }, t("intro")),
         h("div", { className: "__tv_master" },
           h("span", { className: "__tv_masterLabel" },
