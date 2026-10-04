@@ -4,6 +4,8 @@
 
 Open **Plugins → Installed → dsh-tool-vision** from the homepage sidebar to configure and save this plugin. The page uses the official `plugins.bundle.config` interface, without a duplicate entry in global Settings. Web and Desktop share the page. This version requires DSH 0.2.0-rc.2 or a later 0.2.x host; existing configuration is retained.
 
+Choose **Automatic images and previews** to enable image bridging, automatic admission and thumbnails together, or **Vision tools only** for explicit tool calls. Enter the endpoint, key and model on the main page; model overrides and request tuning live under **Advanced**. Existing mixed switch values appear as **Custom combination** and are retained until you change them. Selecting a mode edits a draft; click Save to apply it. Only edited fields are written, blank keys are preserved, and rejected writes keep the draft.
+
 [![中文文档](https://img.shields.io/badge/%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-blue)](README.zh.md)
 
 **GitHub**: [Scorp1o117/dsh-tool-vision](https://github.com/Scorp1o117/dsh-tool-vision) · **npm**: [dsh-tool-vision](https://www.npmjs.com/package/dsh-tool-vision)

@@ -74,8 +74,15 @@ window.__ModuleLoader__.load({
     var NS = "toolVision";
     var inject = ["slots", "locale", "configForms"];
     var zh = {
+      imageMode: "图片处理模式",
+      imageModeAuto: "自动接图与预览（推荐）",
+      imageModeTools: "仅使用视觉工具",
+      imageModeCustom: "自定义组合",
+      imageModeHint: "自动模式为纯文本模型接收并桥接图片，同时显示缩略图；仅工具模式关闭自动接图、桥接和预览，仍可调用视觉工具。选择后点击保存。",
+      advanced: "高级设置：模型覆盖、桥接与请求参数",
+      connectionTitle: "外置视觉模型",
       nav: "视觉模型",
-      intro: "外置视觉模型配置：Agent 通过 inspect_image 工具把图片发给该端点分析。修改后即时生效（settings.yaml 热重载）。",
+      intro: "填写视觉模型连接信息，即可用工具分析图片。保存后即时生效；密钥留空保持原值。",
       apiKeyHint: "留空保持当前密钥。密钥只写不读，不会回显。",
       maxTokens: "最大输出 Tokens",
       timeoutMs: "请求超时（毫秒）",
@@ -163,8 +170,15 @@ window.__ModuleLoader__.load({
       notApplied: "写入未生效"
     };
     var en = {
+      imageMode: "Image handling",
+      imageModeAuto: "Automatic images and previews (recommended)",
+      imageModeTools: "Vision tools only",
+      imageModeCustom: "Custom combination",
+      imageModeHint: "Automatic accepts and bridges images for text-only models and shows thumbnails. Tools only disables automatic image admission, bridging and previews while keeping vision tools available. Click Save to apply your selection.",
+      advanced: "Advanced: model overrides, bridge and request options",
+      connectionTitle: "External vision model",
       nav: "Vision Model",
-      intro: "External vision model config: the agent sends images to this endpoint via the inspect_image tool. Changes apply immediately (settings.yaml hot-reload).",
+      intro: "Connect a vision model to analyze images with tools. Saved changes apply immediately; blank keys stay unchanged.",
       apiKeyHint: "Leave blank to keep the current key. The key is write-only and never echoed.",
       maxTokens: "Max output tokens",
       timeoutMs: "Request timeout (ms)",
@@ -280,6 +294,9 @@ window.__ModuleLoader__.load({
       { key: "sessionHeaderName", label: "fieldSessionHeaderName", type: "text" },
       { key: "sessionId", label: "fieldSessionId", type: "text" }
     ];
+    var BASIC_KEYS = ["baseURL", "apiKey", "model", "desktopScreenshot"];
+    var IMAGE_MODE_KEYS = ["bridgeTextOnly", "bridgeAutoImage", "bridgePreview"];
+    var IMAGE_MODES = { auto: [true, true, true], tools: [false, false, false] };
     var ZH_HINTS = {
       apiKey: "apiKeyHint",
       maxTokens: "maxTokens",
@@ -332,7 +349,7 @@ window.__ModuleLoader__.load({
       // so depending on snapshot.value would reset user input on every render
       // (typing appears dead).
       react.useEffect(function () {
-        if (ready) setDraft(function (prev) { return Object.assign({}, prev, valueToDraft(snapshot.value)); });
+        if (ready) setDraft({});
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [ready]);
 
@@ -367,6 +384,7 @@ window.__ModuleLoader__.load({
       var user = snapshot.user || {};
 
       function fieldDraft(f) {
+        if (f.secret) return draft[f.key] || "";
         if (f.type === "csv" || f.type === "modellist") return draft[f.key] !== void 0 ? draft[f.key] : draftToCsv(value[f.key]);
         if (f.type === "checkbox") return draft[f.key] !== void 0 ? draft[f.key] : Boolean(value[f.key]);
         return draft[f.key] !== void 0 ? draft[f.key] : String(value[f.key] ?? "");
@@ -379,6 +397,23 @@ window.__ModuleLoader__.load({
         });
         setNotice(null);
         setError(null);
+      }
+      function imageMode() {
+        var flags = IMAGE_MODE_KEYS.map(function (key) {
+          return Object.prototype.hasOwnProperty.call(draft, key) ? draft[key] : value[key] !== false;
+        });
+        return Object.keys(IMAGE_MODES).find(function (mode) {
+          return IMAGE_MODES[mode].every(function (flag, i) { return flag === flags[i]; });
+        }) || "custom";
+      }
+      function setImageMode(mode) {
+        if (!IMAGE_MODES[mode] || busy || !snapshot.writable) return;
+        setDraft(function (prev) {
+          var next = Object.assign({}, prev);
+          IMAGE_MODE_KEYS.forEach(function (key, i) { next[key] = IMAGE_MODES[mode][i]; });
+          return next;
+        });
+        setNotice(null); setError(null);
       }
 
       // One atomic mutation carrying ONE revision fence.
@@ -393,6 +428,7 @@ window.__ModuleLoader__.load({
       function buildOps() {
         var ops = [];
         FIELDS.forEach(function (f) {
+          if (!Object.prototype.hasOwnProperty.call(draft, f.key)) return;
           var d = fieldDraft(f);
           if (f.type === "csv" || f.type === "modellist") {
             var arr = String(d).split(",").map(function (s) { return s.trim(); }).filter(Boolean);
@@ -403,8 +439,7 @@ window.__ModuleLoader__.load({
           }
           if (f.type === "checkbox") {
             if (Boolean(d) === Boolean(value[f.key])) return;
-            ops.push(Boolean(d) ? { op: "set", path: [f.key], value: true }
-                                : { op: "unset", path: [f.key] });
+            ops.push({ op: "set", path: [f.key], value: Boolean(d) });
             return;
           }
           if (f.type === "password") {
@@ -443,7 +478,8 @@ window.__ModuleLoader__.load({
        */
       function commit(ops) {
         var run;
-        if (typeof scope.mutate === "function") {
+        var atomic = typeof scope.mutate === "function";
+        if (atomic) {
           run = scope.mutate(ops, scope.getSnapshot().revision);
         } else {
           run = ops.reduce(function (chain, op) {
@@ -452,7 +488,9 @@ window.__ModuleLoader__.load({
             });
           }, Promise.resolve());
         }
-        return Promise.resolve(run).then(function () {
+        return Promise.resolve(run).then(function (accepted) {
+          if (atomic && accepted === false) return false;
+          if (atomic && accepted === true) return true;
           return opsApplied(ops, scope.getSnapshot());
         });
       }
@@ -464,15 +502,18 @@ window.__ModuleLoader__.load({
           return;
         }
         setError(t("error") + "：" + t("notApplied"));
-        reseedDraft();
+        setSnapshot(scope.getSnapshot());
       }
 
       function onSave() {
+        if (busy || !snapshot.writable) return;
         setBusy(true); setNotice(null); setError(null);
         var ops = buildOps();
-        if (ops.length === 0) { setBusy(false); setNotice(t("saved")); return; }
+        if (ops.length === 0) { setBusy(false); setDraft({}); setNotice(t("saved")); return; }
         commit(ops).then(function (ok) {
           reportOutcome(ok);
+          setSnapshot(scope.getSnapshot());
+          if (ok) setDraft({});
         }).catch(function (e) {
           setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
         });
@@ -481,38 +522,28 @@ window.__ModuleLoader__.load({
       // One-click master switch: the same field the checkbox edits, written on its
       // own so taking the plugin offline never depends on the rest of the form.
       function onToggleEnabled() {
+        if (busy || !snapshot.writable) return;
         setBusy(true); setNotice(null); setError(null);
         var next = value.enabled === false;
         commit([{ op: "set", path: ["enabled"], value: next }]).then(function (ok) {
           reportOutcome(ok, next ? t("enabledNotice") : t("disabledNotice"));
+          setSnapshot(scope.getSnapshot());
         }).catch(function (e) {
           setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
         });
       }
 
-      function reseedDraft() {
-        // The mirror folds a write's answer in before the promise settles, so the
-        // snapshot is already current; the timeout only covers a host that
-        // answers late.
-        var fresh = scope.getSnapshot();
-        if (fresh.status === "ready" && fresh.value !== void 0) {
-          setDraft(Object.assign({}, valueToDraft(fresh.value)));
-          return;
-        }
-        setTimeout(function () {
-          var later = scope.getSnapshot();
-          if (later.status === "ready" && later.value !== void 0) setDraft(Object.assign({}, valueToDraft(later.value)));
-        }, 120);
-      }
-
       function onReset() {
+        if (busy || !snapshot.writable) return;
         setBusy(true); setNotice(null); setError(null);
         var ops = FIELDS
           .filter(function (f) { return f.key in user; })
           .map(function (f) { return { op: "unset", path: [f.key] }; });
-        if (ops.length === 0) { setBusy(false); setNotice(t("saved")); return; }
+        if (ops.length === 0) { setBusy(false); setDraft({}); setNotice(t("saved")); return; }
         commit(ops).then(function (ok) {
           reportOutcome(ok);
+          setSnapshot(scope.getSnapshot());
+          if (ok) setDraft({});
         }).catch(function (e) {
           setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
         });
@@ -608,7 +639,7 @@ window.__ModuleLoader__.load({
                       className: "__tv_check",
                       type: "checkbox",
                       checked: Boolean(entry.listed),
-                      disabled: !snapshot.writable,
+                      disabled: busy || !snapshot.writable,
                       onChange: function () { toggleModel(entry); }
                     }),
                     h("span", { className: "__tv_itemId", title: entry.id }, entry.id),
@@ -631,6 +662,68 @@ window.__ModuleLoader__.load({
         );
       }
 
+      function renderField(f) {
+          var overridden = f.key in user;
+          var hint = f.key in ZH_HINTS ? h("span", { className: "__tv_hint" }, t(ZH_HINTS[f.key])) : null;
+          var label = h("span", { className: "__tv_label" },
+            labelOf(f, t),
+            overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null);
+          if (f.type === "checkbox") {
+            return h("label", { key: f.key, className: "__tv_field" },
+              h("span", { className: "__tv_row" },
+                h("input", { className: "__tv_check", type: "checkbox", disabled: busy || !snapshot.writable, checked: Boolean(fieldDraft(f)), onChange: function (e) { setField(f, e.target.checked); } }),
+                h("span", { className: "__tv_label" }, labelOf(f, t)),
+                overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null
+              ),
+              hint
+            );
+          }
+          if (f.type === "select") {
+            var spec = f.options || [];
+            var chosen = fieldDraft(f);
+            // An unset namespace must show the default the server would apply,
+            // not an empty box that reads as "no mode".
+            if (!chosen && spec.length > 0) chosen = spec[0].value;
+            return h("label", { key: f.key, className: "__tv_field" },
+              label,
+              h("select", {
+                className: "__tv_input",
+                value: chosen,
+                disabled: busy || !snapshot.writable,
+                onChange: function (e) { setField(f, e.target.value); }
+              }, spec.map(function (o) { return h("option", { key: o.value, value: o.value }, t(o.label)); })),
+              hint
+            );
+          }
+          if (f.type === "modellist") {
+            return h("label", { key: f.key, className: "__tv_field" },
+              label,
+              h("input", {
+                className: "__tv_input",
+                type: "text",
+                list: MODEL_OPTIONS_ID,
+                disabled: busy || !snapshot.writable,
+                value: fieldDraft(f),
+                placeholder: t("catalogPickHint"),
+                onChange: function (e) { setField(f, e.target.value); }
+              }),
+              hint,
+              renderPicker()
+            );
+          }
+          return h("label", { key: f.key, className: "__tv_field" },
+            label,
+            h("input", {
+              className: "__tv_input",
+              type: f.type === "password" ? "password" : f.type === "number" ? "number" : "text",
+              value: fieldDraft(f),
+              disabled: busy || !snapshot.writable,
+              placeholder: f.type === "password" ? (overridden ? "••••••••" : t("apiKeyHint")) : (f.placeholder || ""),
+              onChange: function (e) { setField(f, e.target.value); }
+            }),
+            hint
+          );
+      }
       return h("div", { className: "__tv_root" },
         h("p", { className: "__tv_hint", style: { margin: "0 0 4px" } }, t("intro")),
         h("div", { className: "__tv_master" },
@@ -653,66 +746,18 @@ window.__ModuleLoader__.load({
           h("button", { type: "button", className: "__tv_link", onClick: loadCatalog, disabled: catalogBusy },
             catalogBusy ? t("catalogLoading") : t("catalogRefresh")),
           catalogError ? h("span", { className: "__tv_error" }, t("catalogFailed") + "：" + catalogError) : null),
-        FIELDS.map(function (f) {
-          var overridden = f.key in user;
-          var hint = f.key in ZH_HINTS ? h("span", { className: "__tv_hint" }, t(ZH_HINTS[f.key])) : null;
-          var label = h("span", { className: "__tv_label" },
-            labelOf(f, t),
-            overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null);
-          if (f.type === "checkbox") {
-            return h("label", { key: f.key, className: "__tv_field" },
-              h("span", { className: "__tv_row" },
-                h("input", { className: "__tv_check", type: "checkbox", checked: Boolean(fieldDraft(f)), onChange: function (e) { setField(f, e.target.checked); } }),
-                h("span", { className: "__tv_label" }, labelOf(f, t)),
-                overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null
-              ),
-              hint
-            );
-          }
-          if (f.type === "select") {
-            var spec = f.options || [];
-            var chosen = fieldDraft(f);
-            // An unset namespace must show the default the server would apply,
-            // not an empty box that reads as "no mode".
-            if (!chosen && spec.length > 0) chosen = spec[0].value;
-            return h("label", { key: f.key, className: "__tv_field" },
-              label,
-              h("select", {
-                className: "__tv_input",
-                value: chosen,
-                disabled: !snapshot.writable,
-                onChange: function (e) { setField(f, e.target.value); }
-              }, spec.map(function (o) { return h("option", { key: o.value, value: o.value }, t(o.label)); })),
-              hint
-            );
-          }
-          if (f.type === "modellist") {
-            return h("label", { key: f.key, className: "__tv_field" },
-              label,
-              h("input", {
-                className: "__tv_input",
-                type: "text",
-                list: MODEL_OPTIONS_ID,
-                value: fieldDraft(f),
-                placeholder: t("catalogPickHint"),
-                onChange: function (e) { setField(f, e.target.value); }
-              }),
-              hint,
-              renderPicker()
-            );
-          }
-          return h("label", { key: f.key, className: "__tv_field" },
-            label,
-            h("input", {
-              className: "__tv_input",
-              type: f.type === "password" ? "password" : f.type === "number" ? "number" : "text",
-              value: fieldDraft(f),
-              placeholder: f.type === "password" ? (overridden ? "••••••••" : t("apiKeyHint")) : (f.placeholder || ""),
-              onChange: function (e) { setField(f, e.target.value); }
-            }),
-            hint
-          );
-        }),
+        h("label", { className: "__tv_field" },
+          h("span", { className: "__tv_label" }, t("imageMode")),
+          h("select", { className: "__tv_input", "aria-label": t("imageMode"), value: imageMode(), disabled: busy || !snapshot.writable,
+            onChange: function (e) { setImageMode(e.target.value); } },
+            h("option", { value: "auto" }, t("imageModeAuto")), h("option", { value: "tools" }, t("imageModeTools")),
+            h("option", { value: "custom", disabled: true }, t("imageModeCustom"))),
+          h("span", { className: "__tv_hint" }, t("imageModeHint"))),
+        h("h3", { className: "__tv_label" }, t("connectionTitle")),
+        FIELDS.filter(function (f) { return BASIC_KEYS.indexOf(f.key) !== -1; }).map(renderField),
+        h("details", null, h("summary", { style: { cursor: "pointer" } }, t("advanced")),
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 10, paddingTop: 12 } },
+            FIELDS.filter(function (f) { return f.key !== "enabled" && BASIC_KEYS.indexOf(f.key) === -1; }).map(renderField))),
         h("datalist", { id: MODEL_OPTIONS_ID }, catalogOptions),
         h("div", { className: "__tv_actions" },
           h("button", { type: "button", className: "__tv_btn __tv_btnPrimary", onClick: onSave, disabled: busy || !snapshot.writable }, t("save")),
@@ -724,14 +769,6 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function valueToDraft(value) {
-      var out = {};
-      for (var i = 0; i < FIELDS.length; i += 1) {
-        var f = FIELDS[i];
-        out[f.key] = f.type === "csv" || f.type === "modellist" ? draftToCsv(value[f.key]) : f.type === "checkbox" ? Boolean(value[f.key]) : String(value[f.key] ?? "");
-      }
-      return out;
-    }
     function draftToCsv(arr) {
       return Array.isArray(arr) ? arr.join(", ") : String(arr ?? "");
     }
@@ -947,7 +984,7 @@ window.__ModuleLoader__.load({
           key: "dsh-tool-vision",
           locale: NS
         }, function (props) {
-          return h(VisionSection, Object.assign({}, props, { scope: scope }));
+          return h(VisionSection, Object.assign({}, props, { scope: scope, t: t }));
         });
       });
     }

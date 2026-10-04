@@ -4,6 +4,8 @@
 
 在首页侧边栏打开 **插件 → 已安装 → dsh-tool-vision**，直接在插件详情页配置并保存。配置页注册到官方的 `plugins.bundle.config` 接口；全局设置页不再重复显示配置入口。Web 与桌面版使用相同界面，本版要求 DSH 0.2.0-rc.2 或更新的 0.2.x 版本。现有配置无需迁移。
 
+选择 **自动接图与预览**，一次开启图片桥接、自动接图和缩略图；选择 **仅使用视觉工具**，保留手动工具调用。主页面填写端点、密钥和模型，模型覆盖与请求参数在 **高级设置** 中。已有开关组合显示为 **自定义组合**，不会自动改写。选择模式只修改草稿，点击保存后才生效；只写入编辑过的字段，密钥留空保持原值，写入被拒绝时保留草稿。
+
 **GitHub**: [Scorp1o117/dsh-tool-vision](https://github.com/Scorp1o117/dsh-tool-vision) · **npm**: [dsh-tool-vision](https://www.npmjs.com/package/dsh-tool-vision) · [English](README.md)
 
 [![Enhancement Suite](https://img.shields.io/badge/part%20of-Enhancement%20Suite-3964fe)](https://github.com/Scorp1o117/dsh-enhancement-suite) [![npm](https://img.shields.io/npm/v/dsh-enhancement-suite)](https://www.npmjs.com/package/dsh-enhancement-suite)

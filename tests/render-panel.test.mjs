@@ -179,17 +179,19 @@ const VALUE = {
   sessionId: '',
 }
 const mutations = []
+let acceptsMutation = true
 const scope = {
   value: VALUE,
   getSnapshot() { return { status: 'ready', value: this.value, user: {}, writable: true } },
   subscribe() { return () => {} },
   async mutate(ops) {
     mutations.push(ops)
+    if (!acceptsMutation) return false
     for (const op of ops) {
       if (op.op === 'set') this.value = { ...this.value, [op.path[0]]: op.value }
       else if (op.op === 'unset') { const next = { ...this.value }; delete next[op.path[0]]; this.value = next }
     }
-    return { ok: true }
+    return true
   },
   async set(path, v) { return this.mutate([{ op: 'set', path, value: v }]) },
   async unset(path) { return this.mutate([{ op: 'unset', path }]) },
@@ -204,18 +206,24 @@ const ctx = {
     inject(name, cb) { cb() },
     register(spec, render) { sections.push({ spec, render }); return () => {} },
   },
-  settingsScope: { bind: () => scope },
+  configForms: { get: () => scope },
 }
 plugin.apply(ctx)
 
 const section = sections[0]
-check('a settings.section is registered', section !== undefined)
-check('the section is the vision panel', section?.spec?.id === 'tool-vision', section?.spec?.id)
+check('a plugin configuration page is registered', section !== undefined)
+check('the section is the vision panel', section?.spec?.key === 'dsh-tool-vision', section?.spec?.key)
 
 const settle = () => new Promise((r) => setTimeout(r, 20))
 const root_ = reactDomClient.createRoot(document.getElementById('root'))
 await act(async () => { root_.render(section.render({ t: (key) => key })) })
 await act(settle)
+check('advanced options start collapsed', document.querySelector('details')?.open === false)
+check('the main form contains only four individual inputs',
+  [...document.querySelectorAll('.__tv_field input')].filter(input => !input.closest('details')).length === 4)
+check('the duplicate enabled checkbox was removed',
+  ![...document.querySelectorAll('label')].some(label => label.textContent.includes('fieldEnabled')))
+await act(async () => { document.querySelector('details').open = true })
 
 // ── assertions on the rendered DOM ──────────────────────────────────────────
 const html = document.getElementById('root').innerHTML
@@ -276,6 +284,39 @@ check('Save writes multimodalModels once', writes.length === 1, JSON.stringify(m
 check('the written array is the ticked set',
   Array.isArray(writes[0]?.value) && writes[0].value.join() === 'deepseek/deepseek-v4.1-flash',
   JSON.stringify(writes[0]?.value))
+
+const imageMode = () => document.querySelector('select[aria-label="imageMode"]')
+await act(async () => {
+  imageMode().value = 'tools'
+  imageMode().dispatchEvent(new window.Event('change', { bubbles: true }))
+})
+check('the image mode only changes a draft before Save', scope.value.bridgeTextOnly === true)
+await act(async () => { saveButton.click() })
+await act(settle)
+const modeOps = mutations.at(-1)
+check('tools-only mode atomically persists all three false values',
+  modeOps.length === 3 && modeOps.every(op => op.op === 'set' && op.value === false) &&
+  scope.value.bridgeTextOnly === false && scope.value.bridgeAutoImage === false && scope.value.bridgePreview === false,
+  JSON.stringify(modeOps))
+check('unrelated advanced settings survive a mode change', scope.value.timeoutMs === 60000 && scope.value.sessionHeaderName === 'x-opencode-session')
+// Stage a mode change, then toggle the master switch independently.
+acceptsMutation = true
+await act(async () => {
+  imageMode().value = 'auto'
+  imageMode().dispatchEvent(new window.Event('change', { bubbles: true }))
+})
+await act(async () => {
+  [...document.querySelectorAll('.__tv_master button')].find(b => b.textContent === 'turnOff').click()
+})
+await act(settle)
+check('the master switch preserves the unsaved mode selection',
+  scope.value.enabled === false && imageMode().value === 'auto' && scope.value.bridgeTextOnly === false)
+acceptsMutation = false
+await act(async () => { saveButton.click() })
+await act(settle)
+check('a refused mode write keeps the draft and reports failure',
+  imageMode().value === 'auto' && scope.value.bridgeTextOnly === false &&
+  document.querySelector('.__tv_error')?.textContent.includes('notApplied'))
 
 // A failing fetch must degrade, not explode.
 fetchMode = 'fail'
