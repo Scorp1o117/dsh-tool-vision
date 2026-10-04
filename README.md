@@ -1,8 +1,12 @@
 # dsh-tool-vision
 
+The plugin follows the DSH language setting (Chinese and English in DSH 0.2.0-rc.2), including configuration, status messages and plugin-list metadata. Language-pack locales use the host fallback chain. Switching languages preserves unsaved settings; there is no separate plugin language selector.
+
 ## Configuration page (DSH 0.2.0-rc.2 and later)
 
 Open **Plugins → Installed → dsh-tool-vision** from the homepage sidebar to configure and save this plugin. The page uses the official `plugins.bundle.config` interface, without a duplicate entry in global Settings. Web and Desktop share the page. This version requires DSH 0.2.0-rc.2 or a later 0.2.x host; existing configuration is retained.
+
+Choose **Automatic images and previews** to enable image bridging, automatic admission and thumbnails together, or **Vision tools only** for explicit tool calls. Enter the endpoint, key and model on the main page; model overrides and request tuning live under **Advanced**. Existing mixed switch values appear as **Custom combination** and are retained until you change them. Selecting a mode edits a draft; click Save to apply it. Only edited fields are written, blank keys are preserved, and rejected writes keep the draft.
 
 [![中文文档](https://img.shields.io/badge/%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-blue)](README.zh.md)
 
@@ -345,6 +349,12 @@ into a native `<datalist>` — every server-side unit test passed while the pane
 looked completely dead. Nothing below the DOM can catch that class of bug.
 
 ## Capability probe: `vision_probe_model` (v0.9.0)
+
+Each request defaults to a 60-second deadline and 2048 output tokens. Response
+bodies are limited to 1 MiB while streaming; an oversized body stops the read
+and yields `unknown`. Authentication, rate-limit and server errors remain
+`unknown` even if their messages mention image input. Only HTTP 400, 415 or
+422 image-rejection errors yield a negative verdict from an error response.
 
 Every other signal here rests on what a model **says** about itself. This tool
 sends a real image to the route and reports what it **does** — the only

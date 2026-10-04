@@ -61,6 +61,37 @@ window.__ModuleLoader__.load({
       ".__tv_itemId{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".__tv_itemName{color:var(--dsw-alias-label-tertiary);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:38%}" +
       ".__tv_unavailable{font-size:13px;color:var(--dsw-alias-label-tertiary)}";
+    // Scoped flat controls retain native keyboard and form behavior.
+    CSS += `
+.dsh-flat.__tv_root{width:100%;max-width:720px;gap:14px;font-size:13px;line-height:1.65;color:var(--dsw-alias-label-primary);--flat-accent:var(--dsw-alias-state-business-primary,#3964fe);--flat-border:var(--dsw-alias-border-l2,#dce2eb)}
+.dsh-flat.__tv_root *{box-sizing:border-box;min-width:0}
+.dsh-flat.__tv_root p{margin:0}
+.dsh-flat.__tv_root label[class$="_field"]{gap:7px}
+.dsh-flat.__tv_root [class$="_label"]{font-size:13px;font-weight:500}
+.dsh-flat.__tv_root [class$="_hint"]{font-size:12px;line-height:1.65}
+.dsh-flat.__tv_root input:not([type=checkbox]),.dsh-flat.__tv_root select,.dsh-flat.__tv_root textarea{width:100%;border:1px solid var(--flat-border);border-radius:6px;background:var(--dsw-alias-bg-layer-3);color:inherit;font:inherit;padding:9px 12px;min-height:40px;box-shadow:none;transition:border-color .15s}
+.dsh-flat.__tv_root input:hover:not(:disabled),.dsh-flat.__tv_root select:hover:not(:disabled),.dsh-flat.__tv_root textarea:hover:not(:disabled){border-color:var(--dsw-alias-label-tertiary)}
+.dsh-flat.__tv_root select{appearance:none;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m2 2 4 4 4-4' fill='none' stroke='%23778091' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.dsh-flat.__tv_root input[type=checkbox]{appearance:none;flex:none;width:30px;height:18px;margin:0;border:1px solid var(--flat-border);border-radius:12px;background:var(--dsw-alias-bg-layer-2);position:relative;cursor:pointer;transition:background .15s,border-color .15s}
+.dsh-flat.__tv_root input[type=checkbox]::before{content:"";position:absolute;left:2px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--dsw-alias-label-secondary);transition:transform .15s}
+.dsh-flat.__tv_root input[type=checkbox]:checked{background:var(--flat-accent);border-color:var(--flat-accent)}
+.dsh-flat.__tv_root input[type=checkbox]:checked::before{transform:translateX(12px);background:#fff}
+.dsh-flat.__tv_root :is(input,select,textarea,button,summary,a):focus-visible{outline:2px solid var(--flat-accent);outline-offset:3px}
+.dsh-flat.__tv_root :is(input,select,textarea,button):disabled{opacity:.5;cursor:default}
+.dsh-flat.__tv_root [class$="_actions"]{flex-wrap:wrap;gap:10px;margin-top:4px;padding-top:16px;border-top:1px solid var(--flat-border)}
+.dsh-flat.__tv_root details{border-top:1px solid var(--flat-border);padding:0}
+.dsh-flat.__tv_root summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;font-size:13px;font-weight:500;cursor:pointer;color:var(--dsw-alias-label-secondary)}
+.dsh-flat.__tv_root summary::-webkit-details-marker{display:none}
+.dsh-flat.__tv_root summary::after{content:"+";font-size:18px;font-weight:400;flex:none}
+.dsh-flat.__tv_root details[open]>summary::after{content:"−"}
+.dsh-flat.__tv_root details>div{padding-bottom:18px}
+.dsh-flat.__tv_root .__tv_master{padding:0 0 16px;margin:0;border:0;border-bottom:1px solid var(--flat-border);border-radius:0;background:none}
+.dsh-flat.__tv_root .__tv_catalog{padding:0;border:0;background:none;gap:8px}
+@media(max-width:480px){.dsh-flat.__tv_root{gap:16px}.dsh-flat.__tv_root .__tv_master{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.dsh-flat.__tv_root *,.dsh-flat.__tv_root input[type=checkbox]::before{transition:none}}
+.dsh-flat.__tv_root button:not(.__tv_link){border-radius:6px;min-height:34px;padding:7px 14px;font:inherit;font-size:12px;box-shadow:none}
+.dsh-flat.__tv_root :is(h2,h3){margin:0;font-size:14px;font-weight:600}
+`;
     var tagId = "dsh-tool-vision/main.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
       var tag = document.createElement("style");
@@ -74,8 +105,16 @@ window.__ModuleLoader__.load({
     var NS = "toolVision";
     var inject = ["slots", "locale", "configForms"];
     var zh = {
+      imageMode: "图片处理模式",
+      imageModeAuto: "自动接图与预览（推荐）",
+      imageModeTools: "仅使用视觉工具",
+      imageModeCustom: "自定义组合",
+      imageModeHint: "自动模式为纯文本模型接收并桥接图片，同时显示缩略图；仅工具模式关闭自动接图、桥接和预览，仍可调用视觉工具。选择后点击保存。",
+      advanced: "高级设置：模型覆盖、桥接与请求参数",
+      connectionTitle: "外置视觉模型",
       nav: "视觉模型",
-      intro: "外置视觉模型配置：Agent 通过 inspect_image 工具把图片发给该端点分析。修改后即时生效（settings.yaml 热重载）。",
+      imagePreview: "图片预览",
+      intro: "填写视觉模型连接信息，即可用工具分析图片。保存后即时生效；密钥留空保持原值。",
       apiKeyHint: "留空保持当前密钥。密钥只写不读，不会回显。",
       maxTokens: "最大输出 Tokens",
       timeoutMs: "请求超时（毫秒）",
@@ -163,8 +202,16 @@ window.__ModuleLoader__.load({
       notApplied: "写入未生效"
     };
     var en = {
+      imageMode: "Image handling",
+      imageModeAuto: "Automatic images and previews (recommended)",
+      imageModeTools: "Vision tools only",
+      imageModeCustom: "Custom combination",
+      imageModeHint: "Automatic accepts and bridges images for text-only models and shows thumbnails. Tools only disables automatic image admission, bridging and previews while keeping vision tools available. Click Save to apply your selection.",
+      advanced: "Advanced: model overrides, bridge and request options",
+      connectionTitle: "External vision model",
       nav: "Vision Model",
-      intro: "External vision model config: the agent sends images to this endpoint via the inspect_image tool. Changes apply immediately (settings.yaml hot-reload).",
+      imagePreview: "Image preview",
+      intro: "Connect a vision model to analyze images with tools. Saved changes apply immediately; blank keys stay unchanged.",
       apiKeyHint: "Leave blank to keep the current key. The key is write-only and never echoed.",
       maxTokens: "Max output tokens",
       timeoutMs: "Request timeout (ms)",
@@ -280,6 +327,9 @@ window.__ModuleLoader__.load({
       { key: "sessionHeaderName", label: "fieldSessionHeaderName", type: "text" },
       { key: "sessionId", label: "fieldSessionId", type: "text" }
     ];
+    var BASIC_KEYS = ["baseURL", "apiKey", "model", "desktopScreenshot"];
+    var IMAGE_MODE_KEYS = ["bridgeTextOnly", "bridgeAutoImage", "bridgePreview"];
+    var IMAGE_MODES = { auto: [true, true, true], tools: [false, false, false] };
     var ZH_HINTS = {
       apiKey: "apiKeyHint",
       maxTokens: "maxTokens",
@@ -303,6 +353,7 @@ window.__ModuleLoader__.load({
 
     // ── component ─────────────────────────────────────────────────────────
     function VisionSection(props) {
+      useLocale(props.locale);
       var t = props.t;
       var scope = props.scope;
       var [snapshot, setSnapshot] = react.useState(function () { return scope.getSnapshot(); });
@@ -332,7 +383,7 @@ window.__ModuleLoader__.load({
       // so depending on snapshot.value would reset user input on every render
       // (typing appears dead).
       react.useEffect(function () {
-        if (ready) setDraft(function (prev) { return Object.assign({}, prev, valueToDraft(snapshot.value)); });
+        if (ready) setDraft({});
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [ready]);
 
@@ -367,6 +418,7 @@ window.__ModuleLoader__.load({
       var user = snapshot.user || {};
 
       function fieldDraft(f) {
+        if (f.secret) return draft[f.key] || "";
         if (f.type === "csv" || f.type === "modellist") return draft[f.key] !== void 0 ? draft[f.key] : draftToCsv(value[f.key]);
         if (f.type === "checkbox") return draft[f.key] !== void 0 ? draft[f.key] : Boolean(value[f.key]);
         return draft[f.key] !== void 0 ? draft[f.key] : String(value[f.key] ?? "");
@@ -379,6 +431,23 @@ window.__ModuleLoader__.load({
         });
         setNotice(null);
         setError(null);
+      }
+      function imageMode() {
+        var flags = IMAGE_MODE_KEYS.map(function (key) {
+          return Object.prototype.hasOwnProperty.call(draft, key) ? draft[key] : value[key] !== false;
+        });
+        return Object.keys(IMAGE_MODES).find(function (mode) {
+          return IMAGE_MODES[mode].every(function (flag, i) { return flag === flags[i]; });
+        }) || "custom";
+      }
+      function setImageMode(mode) {
+        if (!IMAGE_MODES[mode] || busy || !snapshot.writable) return;
+        setDraft(function (prev) {
+          var next = Object.assign({}, prev);
+          IMAGE_MODE_KEYS.forEach(function (key, i) { next[key] = IMAGE_MODES[mode][i]; });
+          return next;
+        });
+        setNotice(null); setError(null);
       }
 
       // One atomic mutation carrying ONE revision fence.
@@ -393,6 +462,7 @@ window.__ModuleLoader__.load({
       function buildOps() {
         var ops = [];
         FIELDS.forEach(function (f) {
+          if (!Object.prototype.hasOwnProperty.call(draft, f.key)) return;
           var d = fieldDraft(f);
           if (f.type === "csv" || f.type === "modellist") {
             var arr = String(d).split(",").map(function (s) { return s.trim(); }).filter(Boolean);
@@ -403,8 +473,7 @@ window.__ModuleLoader__.load({
           }
           if (f.type === "checkbox") {
             if (Boolean(d) === Boolean(value[f.key])) return;
-            ops.push(Boolean(d) ? { op: "set", path: [f.key], value: true }
-                                : { op: "unset", path: [f.key] });
+            ops.push({ op: "set", path: [f.key], value: Boolean(d) });
             return;
           }
           if (f.type === "password") {
@@ -443,7 +512,8 @@ window.__ModuleLoader__.load({
        */
       function commit(ops) {
         var run;
-        if (typeof scope.mutate === "function") {
+        var atomic = typeof scope.mutate === "function";
+        if (atomic) {
           run = scope.mutate(ops, scope.getSnapshot().revision);
         } else {
           run = ops.reduce(function (chain, op) {
@@ -452,7 +522,9 @@ window.__ModuleLoader__.load({
             });
           }, Promise.resolve());
         }
-        return Promise.resolve(run).then(function () {
+        return Promise.resolve(run).then(function (accepted) {
+          if (atomic && accepted === false) return false;
+          if (atomic && accepted === true) return true;
           return opsApplied(ops, scope.getSnapshot());
         });
       }
@@ -460,61 +532,54 @@ window.__ModuleLoader__.load({
       function reportOutcome(ok, okMessage) {
         setBusy(false);
         if (ok) {
-          setNotice(okMessage || t("saved"));
+          setNotice({ key: okMessage || "saved" });
           return;
         }
-        setError(t("error") + "：" + t("notApplied"));
-        reseedDraft();
+        setError({ key: "error", detailKey: "notApplied" });
+        setSnapshot(scope.getSnapshot());
       }
 
       function onSave() {
+        if (busy || !snapshot.writable) return;
         setBusy(true); setNotice(null); setError(null);
         var ops = buildOps();
-        if (ops.length === 0) { setBusy(false); setNotice(t("saved")); return; }
+        if (ops.length === 0) { setBusy(false); setDraft({}); setNotice({ key: "saved" }); return; }
         commit(ops).then(function (ok) {
           reportOutcome(ok);
+          setSnapshot(scope.getSnapshot());
+          if (ok) setDraft({});
         }).catch(function (e) {
-          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
+          setBusy(false); setError({ key: "error", detail: String(e && e.message || e) });
         });
       }
 
       // One-click master switch: the same field the checkbox edits, written on its
       // own so taking the plugin offline never depends on the rest of the form.
       function onToggleEnabled() {
+        if (busy || !snapshot.writable) return;
         setBusy(true); setNotice(null); setError(null);
         var next = value.enabled === false;
         commit([{ op: "set", path: ["enabled"], value: next }]).then(function (ok) {
-          reportOutcome(ok, next ? t("enabledNotice") : t("disabledNotice"));
+          reportOutcome(ok, next ? "enabledNotice" : "disabledNotice");
+          setSnapshot(scope.getSnapshot());
         }).catch(function (e) {
-          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
+          setBusy(false); setError({ key: "error", detail: String(e && e.message || e) });
         });
       }
 
-      function reseedDraft() {
-        // The mirror folds a write's answer in before the promise settles, so the
-        // snapshot is already current; the timeout only covers a host that
-        // answers late.
-        var fresh = scope.getSnapshot();
-        if (fresh.status === "ready" && fresh.value !== void 0) {
-          setDraft(Object.assign({}, valueToDraft(fresh.value)));
-          return;
-        }
-        setTimeout(function () {
-          var later = scope.getSnapshot();
-          if (later.status === "ready" && later.value !== void 0) setDraft(Object.assign({}, valueToDraft(later.value)));
-        }, 120);
-      }
-
       function onReset() {
+        if (busy || !snapshot.writable) return;
         setBusy(true); setNotice(null); setError(null);
         var ops = FIELDS
           .filter(function (f) { return f.key in user; })
           .map(function (f) { return { op: "unset", path: [f.key] }; });
-        if (ops.length === 0) { setBusy(false); setNotice(t("saved")); return; }
+        if (ops.length === 0) { setBusy(false); setDraft({}); setNotice({ key: "saved" }); return; }
         commit(ops).then(function (ok) {
           reportOutcome(ok);
+          setSnapshot(scope.getSnapshot());
+          if (ok) setDraft({});
         }).catch(function (e) {
-          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
+          setBusy(false); setError({ key: "error", detail: String(e && e.message || e) });
         });
       }
 
@@ -608,7 +673,7 @@ window.__ModuleLoader__.load({
                       className: "__tv_check",
                       type: "checkbox",
                       checked: Boolean(entry.listed),
-                      disabled: !snapshot.writable,
+                      disabled: busy || !snapshot.writable,
                       onChange: function () { toggleModel(entry); }
                     }),
                     h("span", { className: "__tv_itemId", title: entry.id }, entry.id),
@@ -631,7 +696,69 @@ window.__ModuleLoader__.load({
         );
       }
 
-      return h("div", { className: "__tv_root" },
+      function renderField(f) {
+          var overridden = f.key in user;
+          var hint = f.key in ZH_HINTS ? h("span", { className: "__tv_hint" }, t(ZH_HINTS[f.key])) : null;
+          var label = h("span", { className: "__tv_label" },
+            labelOf(f, t),
+            overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null);
+          if (f.type === "checkbox") {
+            return h("label", { key: f.key, className: "__tv_field" },
+              h("span", { className: "__tv_row" },
+                h("input", { className: "__tv_check", type: "checkbox", disabled: busy || !snapshot.writable, checked: Boolean(fieldDraft(f)), onChange: function (e) { setField(f, e.target.checked); } }),
+                h("span", { className: "__tv_label" }, labelOf(f, t)),
+                overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null
+              ),
+              hint
+            );
+          }
+          if (f.type === "select") {
+            var spec = f.options || [];
+            var chosen = fieldDraft(f);
+            // An unset namespace must show the default the server would apply,
+            // not an empty box that reads as "no mode".
+            if (!chosen && spec.length > 0) chosen = spec[0].value;
+            return h("label", { key: f.key, className: "__tv_field" },
+              label,
+              h("select", {
+                className: "__tv_input",
+                value: chosen,
+                disabled: busy || !snapshot.writable,
+                onChange: function (e) { setField(f, e.target.value); }
+              }, spec.map(function (o) { return h("option", { key: o.value, value: o.value }, t(o.label)); })),
+              hint
+            );
+          }
+          if (f.type === "modellist") {
+            return h("label", { key: f.key, className: "__tv_field" },
+              label,
+              h("input", {
+                className: "__tv_input",
+                type: "text",
+                list: MODEL_OPTIONS_ID,
+                disabled: busy || !snapshot.writable,
+                value: fieldDraft(f),
+                placeholder: t("catalogPickHint"),
+                onChange: function (e) { setField(f, e.target.value); }
+              }),
+              hint,
+              renderPicker()
+            );
+          }
+          return h("label", { key: f.key, className: "__tv_field" },
+            label,
+            h("input", {
+              className: "__tv_input",
+              type: f.type === "password" ? "password" : f.type === "number" ? "number" : "text",
+              value: fieldDraft(f),
+              disabled: busy || !snapshot.writable,
+              placeholder: f.type === "password" ? (overridden ? "••••••••" : t("apiKeyHint")) : (f.placeholder || ""),
+              onChange: function (e) { setField(f, e.target.value); }
+            }),
+            hint
+          );
+      }
+      return h("div", { className: "__tv_root dsh-flat" },
         h("p", { className: "__tv_hint", style: { margin: "0 0 4px" } }, t("intro")),
         h("div", { className: "__tv_master" },
           h("span", { className: "__tv_masterLabel" },
@@ -653,85 +780,29 @@ window.__ModuleLoader__.load({
           h("button", { type: "button", className: "__tv_link", onClick: loadCatalog, disabled: catalogBusy },
             catalogBusy ? t("catalogLoading") : t("catalogRefresh")),
           catalogError ? h("span", { className: "__tv_error" }, t("catalogFailed") + "：" + catalogError) : null),
-        FIELDS.map(function (f) {
-          var overridden = f.key in user;
-          var hint = f.key in ZH_HINTS ? h("span", { className: "__tv_hint" }, t(ZH_HINTS[f.key])) : null;
-          var label = h("span", { className: "__tv_label" },
-            labelOf(f, t),
-            overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null);
-          if (f.type === "checkbox") {
-            return h("label", { key: f.key, className: "__tv_field" },
-              h("span", { className: "__tv_row" },
-                h("input", { className: "__tv_check", type: "checkbox", checked: Boolean(fieldDraft(f)), onChange: function (e) { setField(f, e.target.checked); } }),
-                h("span", { className: "__tv_label" }, labelOf(f, t)),
-                overridden ? h("span", { className: "__tv_override" }, t("overridden")) : null
-              ),
-              hint
-            );
-          }
-          if (f.type === "select") {
-            var spec = f.options || [];
-            var chosen = fieldDraft(f);
-            // An unset namespace must show the default the server would apply,
-            // not an empty box that reads as "no mode".
-            if (!chosen && spec.length > 0) chosen = spec[0].value;
-            return h("label", { key: f.key, className: "__tv_field" },
-              label,
-              h("select", {
-                className: "__tv_input",
-                value: chosen,
-                disabled: !snapshot.writable,
-                onChange: function (e) { setField(f, e.target.value); }
-              }, spec.map(function (o) { return h("option", { key: o.value, value: o.value }, t(o.label)); })),
-              hint
-            );
-          }
-          if (f.type === "modellist") {
-            return h("label", { key: f.key, className: "__tv_field" },
-              label,
-              h("input", {
-                className: "__tv_input",
-                type: "text",
-                list: MODEL_OPTIONS_ID,
-                value: fieldDraft(f),
-                placeholder: t("catalogPickHint"),
-                onChange: function (e) { setField(f, e.target.value); }
-              }),
-              hint,
-              renderPicker()
-            );
-          }
-          return h("label", { key: f.key, className: "__tv_field" },
-            label,
-            h("input", {
-              className: "__tv_input",
-              type: f.type === "password" ? "password" : f.type === "number" ? "number" : "text",
-              value: fieldDraft(f),
-              placeholder: f.type === "password" ? (overridden ? "••••••••" : t("apiKeyHint")) : (f.placeholder || ""),
-              onChange: function (e) { setField(f, e.target.value); }
-            }),
-            hint
-          );
-        }),
+        h("label", { className: "__tv_field" },
+          h("span", { className: "__tv_label" }, t("imageMode")),
+          h("select", { className: "__tv_input", "aria-label": t("imageMode"), value: imageMode(), disabled: busy || !snapshot.writable,
+            onChange: function (e) { setImageMode(e.target.value); } },
+            h("option", { value: "auto" }, t("imageModeAuto")), h("option", { value: "tools" }, t("imageModeTools")),
+            h("option", { value: "custom", disabled: true }, t("imageModeCustom"))),
+          h("span", { className: "__tv_hint" }, t("imageModeHint"))),
+        h("h3", { className: "__tv_label" }, t("connectionTitle")),
+        FIELDS.filter(function (f) { return BASIC_KEYS.indexOf(f.key) !== -1; }).map(renderField),
+        h("details", null, h("summary", { style: { cursor: "pointer" } }, t("advanced")),
+          h("div", { style: { display: "flex", flexDirection: "column", gap: 10, paddingTop: 12 } },
+            FIELDS.filter(function (f) { return f.key !== "enabled" && BASIC_KEYS.indexOf(f.key) === -1; }).map(renderField))),
         h("datalist", { id: MODEL_OPTIONS_ID }, catalogOptions),
         h("div", { className: "__tv_actions" },
           h("button", { type: "button", className: "__tv_btn __tv_btnPrimary", onClick: onSave, disabled: busy || !snapshot.writable }, t("save")),
           h("button", { type: "button", className: "__tv_btn", onClick: onReset, disabled: busy || !snapshot.writable }, t("reset")),
-          notice ? h("span", { className: "__tv_status" }, notice) : null,
+          notice ? h("span", { className: "__tv_status" }, messageText(t, notice)) : null,
           busy ? h("span", { className: "__tv_status" }, t("saving")) : null,
-          error ? h("span", { className: "__tv_error" }, error) : null
+          error ? h("span", { className: "__tv_error" }, messageText(t, error)) : null
         )
       );
     }
 
-    function valueToDraft(value) {
-      var out = {};
-      for (var i = 0; i < FIELDS.length; i += 1) {
-        var f = FIELDS[i];
-        out[f.key] = f.type === "csv" || f.type === "modellist" ? draftToCsv(value[f.key]) : f.type === "checkbox" ? Boolean(value[f.key]) : String(value[f.key] ?? "");
-      }
-      return out;
-    }
     function draftToCsv(arr) {
       return Array.isArray(arr) ? arr.join(", ") : String(arr ?? "");
     }
@@ -831,7 +902,8 @@ window.__ModuleLoader__.load({
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.82);display:flex;align-items:center;justify-content:center;z-index:2147483000;cursor:zoom-out;";
       var big = document.createElement("img");
       big.src = src;
-      big.alt = alt || "图片预览";
+      big.alt = alt;
+      big.setAttribute(PREVIEW_ATTR, "1");
       big.style.cssText = "max-width:92vw;max-height:92vh;object-fit:contain;border-radius:4px;box-shadow:0 8px 40px rgba(0,0,0,0.5);";
       var close = function () {
         overlay.remove();
@@ -849,6 +921,7 @@ window.__ModuleLoader__.load({
 
     function attachBridgePreview(ctx, scope) {
       var cfg = previewConfigOf(scope);
+      var t = ctx.locale.bind(NS);
       var pendingTimer = null;
       var intervalTimer = null;
       var observer = null;
@@ -867,7 +940,7 @@ window.__ModuleLoader__.load({
         var img = document.createElement("img");
         img.setAttribute(PREVIEW_ATTR, "1");
         img.src = PREVIEW_ROUTE + "?p=" + encodeURIComponent(path);
-        img.alt = "图片预览";
+        img.alt = t("imagePreview");
         img.style.cssText = "display:block;margin-left:auto;margin-right:0;max-width:min(360px,100%);max-height:420px;border-radius:8px;margin-top:4px;margin-bottom:6px;object-fit:contain;cursor:zoom-in;";
         img.addEventListener("click", function () { openLightbox(img.src, img.alt); });
         img.addEventListener("load", function () {
@@ -920,6 +993,9 @@ window.__ModuleLoader__.load({
             break;
           }
         });
+        var offLocale = typeof ctx.locale.subscribe === "function" ? ctx.locale.subscribe(function () {
+          document.querySelectorAll("img[" + PREVIEW_ATTR + "]").forEach(function (img) { img.alt = t("imagePreview"); });
+        }) : null;
         observer.observe(document.body, { childList: true, subtree: true, characterData: true });
         armInterval();
         var un = typeof scope.subscribe === "function" ? scope.subscribe(function () {
@@ -927,6 +1003,7 @@ window.__ModuleLoader__.load({
           armInterval();
         }) : null;
         return function () {
+          if (offLocale) offLocale();
           if (observer) observer.disconnect();
           if (pendingTimer !== null) { clearTimeout(pendingTimer); pendingTimer = null; }
           if (intervalTimer !== null) { clearInterval(intervalTimer); intervalTimer = null; }
@@ -936,6 +1013,21 @@ window.__ModuleLoader__.load({
     }
 
     // ── plugin ────────────────────────────────────────────────────────────
+
+    // Follow the host language without remounting the form or losing drafts.
+    function useLocale(locale) {
+      var refresh = react.useState(0)[1];
+      react.useEffect(function () {
+        if (!locale || typeof locale.subscribe !== "function") return;
+        return locale.subscribe(function () { refresh(function (revision) { return revision + 1; }); });
+      }, [locale]);
+    }
+    // Keep translation keys in state so feedback follows later language changes.
+    function messageText(t, message) {
+      if (!message) return "";
+      return t(message.key) + (message.detailKey ? ": " + t(message.detailKey) : message.detail ? ": " + message.detail : "");
+    }
+
     function apply(ctx) {
       var t = ctx.locale.bind(NS);
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "dsh-tool-vision: dictionaries");
@@ -947,7 +1039,7 @@ window.__ModuleLoader__.load({
           key: "dsh-tool-vision",
           locale: NS
         }, function (props) {
-          return h(VisionSection, Object.assign({}, props, { scope: scope }));
+          return h(VisionSection, Object.assign({}, props, { scope: scope, t: t, locale: ctx.locale }));
         });
       });
     }
