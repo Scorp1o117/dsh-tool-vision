@@ -346,6 +346,12 @@ looked completely dead. Nothing below the DOM can catch that class of bug.
 
 ## Capability probe: `vision_probe_model` (v0.9.0)
 
+Each request defaults to a 60-second deadline and 2048 output tokens. Response
+bodies are limited to 1 MiB while streaming; an oversized body stops the read
+and yields `unknown`. Authentication, rate-limit and server errors remain
+`unknown` even if their messages mention image input. Only HTTP 400, 415 or
+422 image-rejection errors yield a negative verdict from an error response.
+
 Every other signal here rests on what a model **says** about itself. This tool
 sends a real image to the route and reports what it **does** — the only
 ground truth in the plugin.

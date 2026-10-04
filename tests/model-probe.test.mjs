@@ -15,10 +15,12 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createServer } from 'node:http'
 
 import {
   PROBE_MAX_TOKENS,
   PROBE_TIMEOUT_MS,
+  PROBE_MAX_BODY_BYTES,
   makeSolidPng,
   probeModelCapability,
   solidColorDataUrl,
@@ -178,4 +180,80 @@ test('the probe never sends an image without asking first', async () => {
   const result = await probeModelCapability({ ...TARGET, fetchImpl })
   assert.equal(result.support, 'unknown')
   assert.equal(calls.length, 1, 'control failure stops the probe')
+})
+
+test('omitted budgets use the documented defaults', async () => {
+  let requestSignal
+  const result = await probeModelCapability({ ...TARGET, fetchImpl: async (_url, init) => {
+    requestSignal = init.signal
+    assert.equal(init.signal.aborted, false)
+    assert.equal(JSON.parse(init.body).max_tokens, PROBE_MAX_TOKENS)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    assert.equal(init.signal.aborted, false, 'default timeout must not fire immediately')
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }))
+  } })
+  assert.equal(result.support, 'no')
+  assert.equal(requestSignal.aborted, false)
+})
+
+test('a stalled request respects its timeout', async () => {
+  const result = await probeModelCapability({ ...TARGET, timeoutMs: 10, fetchImpl: (_url, init) =>
+    new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason))) })
+  assert.equal(result.support, 'unknown')
+  assert.match(result.detail, /timed out/)
+})
+
+test('infrastructure errors mentioning image_url still remain unknown', async () => {
+  for (const status of [401, 429, 500, 502]) {
+    const { fetchImpl } = scriptedFetch(body => hasImagePart(body)
+      ? { status, payload: { error: { message: 'upstream image_url request failed' } } }
+      : answer('ok'))
+    assert.equal((await probeModelCapability({ ...TARGET, fetchImpl })).support, 'unknown')
+  }
+})
+
+test('oversized streamed responses are cancelled before reading the rest', async () => {
+  let cancelled = false
+  let pulls = 0
+  const result = await probeModelCapability({ ...TARGET, fetchImpl: async () => new Response(new ReadableStream({
+    pull(controller) {
+      pulls += 1
+      controller.enqueue(new Uint8Array(PROBE_MAX_BODY_BYTES / 2 + 1))
+    },
+    cancel() { cancelled = true },
+  })) })
+  assert.equal(result.support, 'unknown')
+  assert.match(result.detail, /body too large/)
+  assert.equal(cancelled, true)
+  assert.ok(pulls <= 3, `bounded stream reads (got ${pulls})`)
+})
+
+test('invalid URLs and already cancelled probes do not reach fetch', async () => {
+  const fetchImpl = () => { throw new Error('fetch must not run') }
+  for (const baseURL of ['bad url', 'file:///tmp/image']) {
+    const result = await probeModelCapability({ ...TARGET, baseURL, fetchImpl })
+    assert.equal(result.support, 'unknown')
+    assert.match(result.detail, /invalid HTTP/)
+  }
+  const result = await probeModelCapability({ ...TARGET, fetchImpl }, AbortSignal.abort(new Error('cancelled')))
+  assert.equal(result.support, 'unknown')
+  assert.match(result.detail, /cancelled/)
+})
+
+test('native HTTP fetch aborts a response whose body stalls', async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.write('{"choices":[')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const result = await probeModelCapability({
+      ...TARGET, baseURL: `http://127.0.0.1:${server.address().port}/v1`, timeoutMs: 100,
+    })
+    assert.equal(result.support, 'unknown')
+    assert.match(result.detail, /timed out|abort/i)
+  } finally {
+    server.closeAllConnections()
+    await new Promise(resolve => server.close(resolve))
+  }
 })
