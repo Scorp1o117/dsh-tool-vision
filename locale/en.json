@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Vision tools",
+    "description": "Connect an external vision model to analyze images, with image bridging and previews for text models."
+  }
+}

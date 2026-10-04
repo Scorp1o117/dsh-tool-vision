@@ -21,7 +21,7 @@ test('a settled write is verified against the namespace section', () => {
   // only way to tell a committed change from a refused one.
   assert.match(clientSource, /function opsApplied\(ops, snap\)/);
   assert.match(clientSource, /return opsApplied\(ops, scope\.getSnapshot\(\)\)/);
-  assert.match(clientSource, /t\("notApplied"\)/);
+  assert.match(clientSource, /detailKey: "notApplied"/);
 });
 
 test('hosts without mutate() still write in order, never in parallel', () => {

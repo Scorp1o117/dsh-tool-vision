@@ -1,5 +1,7 @@
 # dsh-tool-vision
 
+The plugin follows the DSH language setting (Chinese and English in DSH 0.2.0-rc.2), including configuration, status messages and plugin-list metadata. Language-pack locales use the host fallback chain. Switching languages preserves unsaved settings; there is no separate plugin language selector.
+
 ## Configuration page (DSH 0.2.0-rc.2 and later)
 
 Open **Plugins → Installed → dsh-tool-vision** from the homepage sidebar to configure and save this plugin. The page uses the official `plugins.bundle.config` interface, without a duplicate entry in global Settings. Web and Desktop share the page. This version requires DSH 0.2.0-rc.2 or a later 0.2.x host; existing configuration is retained.

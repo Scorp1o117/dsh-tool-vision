@@ -113,6 +113,7 @@ window.__ModuleLoader__.load({
       advanced: "高级设置：模型覆盖、桥接与请求参数",
       connectionTitle: "外置视觉模型",
       nav: "视觉模型",
+      imagePreview: "图片预览",
       intro: "填写视觉模型连接信息，即可用工具分析图片。保存后即时生效；密钥留空保持原值。",
       apiKeyHint: "留空保持当前密钥。密钥只写不读，不会回显。",
       maxTokens: "最大输出 Tokens",
@@ -209,6 +210,7 @@ window.__ModuleLoader__.load({
       advanced: "Advanced: model overrides, bridge and request options",
       connectionTitle: "External vision model",
       nav: "Vision Model",
+      imagePreview: "Image preview",
       intro: "Connect a vision model to analyze images with tools. Saved changes apply immediately; blank keys stay unchanged.",
       apiKeyHint: "Leave blank to keep the current key. The key is write-only and never echoed.",
       maxTokens: "Max output tokens",
@@ -351,6 +353,7 @@ window.__ModuleLoader__.load({
 
     // ── component ─────────────────────────────────────────────────────────
     function VisionSection(props) {
+      useLocale(props.locale);
       var t = props.t;
       var scope = props.scope;
       var [snapshot, setSnapshot] = react.useState(function () { return scope.getSnapshot(); });
@@ -529,10 +532,10 @@ window.__ModuleLoader__.load({
       function reportOutcome(ok, okMessage) {
         setBusy(false);
         if (ok) {
-          setNotice(okMessage || t("saved"));
+          setNotice({ key: okMessage || "saved" });
           return;
         }
-        setError(t("error") + "：" + t("notApplied"));
+        setError({ key: "error", detailKey: "notApplied" });
         setSnapshot(scope.getSnapshot());
       }
 
@@ -540,13 +543,13 @@ window.__ModuleLoader__.load({
         if (busy || !snapshot.writable) return;
         setBusy(true); setNotice(null); setError(null);
         var ops = buildOps();
-        if (ops.length === 0) { setBusy(false); setDraft({}); setNotice(t("saved")); return; }
+        if (ops.length === 0) { setBusy(false); setDraft({}); setNotice({ key: "saved" }); return; }
         commit(ops).then(function (ok) {
           reportOutcome(ok);
           setSnapshot(scope.getSnapshot());
           if (ok) setDraft({});
         }).catch(function (e) {
-          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
+          setBusy(false); setError({ key: "error", detail: String(e && e.message || e) });
         });
       }
 
@@ -557,10 +560,10 @@ window.__ModuleLoader__.load({
         setBusy(true); setNotice(null); setError(null);
         var next = value.enabled === false;
         commit([{ op: "set", path: ["enabled"], value: next }]).then(function (ok) {
-          reportOutcome(ok, next ? t("enabledNotice") : t("disabledNotice"));
+          reportOutcome(ok, next ? "enabledNotice" : "disabledNotice");
           setSnapshot(scope.getSnapshot());
         }).catch(function (e) {
-          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
+          setBusy(false); setError({ key: "error", detail: String(e && e.message || e) });
         });
       }
 
@@ -570,13 +573,13 @@ window.__ModuleLoader__.load({
         var ops = FIELDS
           .filter(function (f) { return f.key in user; })
           .map(function (f) { return { op: "unset", path: [f.key] }; });
-        if (ops.length === 0) { setBusy(false); setDraft({}); setNotice(t("saved")); return; }
+        if (ops.length === 0) { setBusy(false); setDraft({}); setNotice({ key: "saved" }); return; }
         commit(ops).then(function (ok) {
           reportOutcome(ok);
           setSnapshot(scope.getSnapshot());
           if (ok) setDraft({});
         }).catch(function (e) {
-          setBusy(false); setError(t("error") + "：" + String(e && e.message || e));
+          setBusy(false); setError({ key: "error", detail: String(e && e.message || e) });
         });
       }
 
@@ -793,9 +796,9 @@ window.__ModuleLoader__.load({
         h("div", { className: "__tv_actions" },
           h("button", { type: "button", className: "__tv_btn __tv_btnPrimary", onClick: onSave, disabled: busy || !snapshot.writable }, t("save")),
           h("button", { type: "button", className: "__tv_btn", onClick: onReset, disabled: busy || !snapshot.writable }, t("reset")),
-          notice ? h("span", { className: "__tv_status" }, notice) : null,
+          notice ? h("span", { className: "__tv_status" }, messageText(t, notice)) : null,
           busy ? h("span", { className: "__tv_status" }, t("saving")) : null,
-          error ? h("span", { className: "__tv_error" }, error) : null
+          error ? h("span", { className: "__tv_error" }, messageText(t, error)) : null
         )
       );
     }
@@ -899,7 +902,8 @@ window.__ModuleLoader__.load({
       overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.82);display:flex;align-items:center;justify-content:center;z-index:2147483000;cursor:zoom-out;";
       var big = document.createElement("img");
       big.src = src;
-      big.alt = alt || "图片预览";
+      big.alt = alt;
+      big.setAttribute(PREVIEW_ATTR, "1");
       big.style.cssText = "max-width:92vw;max-height:92vh;object-fit:contain;border-radius:4px;box-shadow:0 8px 40px rgba(0,0,0,0.5);";
       var close = function () {
         overlay.remove();
@@ -917,6 +921,7 @@ window.__ModuleLoader__.load({
 
     function attachBridgePreview(ctx, scope) {
       var cfg = previewConfigOf(scope);
+      var t = ctx.locale.bind(NS);
       var pendingTimer = null;
       var intervalTimer = null;
       var observer = null;
@@ -935,7 +940,7 @@ window.__ModuleLoader__.load({
         var img = document.createElement("img");
         img.setAttribute(PREVIEW_ATTR, "1");
         img.src = PREVIEW_ROUTE + "?p=" + encodeURIComponent(path);
-        img.alt = "图片预览";
+        img.alt = t("imagePreview");
         img.style.cssText = "display:block;margin-left:auto;margin-right:0;max-width:min(360px,100%);max-height:420px;border-radius:8px;margin-top:4px;margin-bottom:6px;object-fit:contain;cursor:zoom-in;";
         img.addEventListener("click", function () { openLightbox(img.src, img.alt); });
         img.addEventListener("load", function () {
@@ -988,6 +993,9 @@ window.__ModuleLoader__.load({
             break;
           }
         });
+        var offLocale = typeof ctx.locale.subscribe === "function" ? ctx.locale.subscribe(function () {
+          document.querySelectorAll("img[" + PREVIEW_ATTR + "]").forEach(function (img) { img.alt = t("imagePreview"); });
+        }) : null;
         observer.observe(document.body, { childList: true, subtree: true, characterData: true });
         armInterval();
         var un = typeof scope.subscribe === "function" ? scope.subscribe(function () {
@@ -995,6 +1003,7 @@ window.__ModuleLoader__.load({
           armInterval();
         }) : null;
         return function () {
+          if (offLocale) offLocale();
           if (observer) observer.disconnect();
           if (pendingTimer !== null) { clearTimeout(pendingTimer); pendingTimer = null; }
           if (intervalTimer !== null) { clearInterval(intervalTimer); intervalTimer = null; }
@@ -1004,6 +1013,21 @@ window.__ModuleLoader__.load({
     }
 
     // ── plugin ────────────────────────────────────────────────────────────
+
+    // Follow the host language without remounting the form or losing drafts.
+    function useLocale(locale) {
+      var refresh = react.useState(0)[1];
+      react.useEffect(function () {
+        if (!locale || typeof locale.subscribe !== "function") return;
+        return locale.subscribe(function () { refresh(function (revision) { return revision + 1; }); });
+      }, [locale]);
+    }
+    // Keep translation keys in state so feedback follows later language changes.
+    function messageText(t, message) {
+      if (!message) return "";
+      return t(message.key) + (message.detailKey ? ": " + t(message.detailKey) : message.detail ? ": " + message.detail : "");
+    }
+
     function apply(ctx) {
       var t = ctx.locale.bind(NS);
       ctx.effect(function () { return ctx.locale.register(NS, { zh: zh, en: en }); }, "dsh-tool-vision: dictionaries");
@@ -1015,7 +1039,7 @@ window.__ModuleLoader__.load({
           key: "dsh-tool-vision",
           locale: NS
         }, function (props) {
-          return h(VisionSection, Object.assign({}, props, { scope: scope, t: t }));
+          return h(VisionSection, Object.assign({}, props, { scope: scope, t: t, locale: ctx.locale }));
         });
       });
     }
