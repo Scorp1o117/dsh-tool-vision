@@ -1,5 +1,9 @@
 # dsh-tool-vision
 
+## DSH 0.2.1-rc.2
+
+适配 DSH 0.2.1-rc.2，明确声明该预发布版本的 engines.dsh 与 peer 范围。宿主新增 DeepSeek V4.1 Flash 1017 及 Search/Fetch API，本插件使用的接口保持不变。保留已有推理配置及自动补齐显式开启策略。
+
 ## DSH 0.2.1-rc.1
 
 支持 DSH 0.2.1-rc.1，通过 `engines.dsh` 和一致的 peer 范围声明兼容，明确包含该预发布版本，并保留已有 0.2.0-rc.2 支持。

@@ -1,5 +1,9 @@
 # dsh-tool-vision
 
+## DSH 0.2.1-rc.2
+
+Supports DSH 0.2.1-rc.2, including explicit prerelease engines.dsh and peer ranges. This host update adds DeepSeek V4.1 Flash 1017 and Search/Fetch APIs; the plugin APIs used here remain unchanged. Existing reasoning settings and the opt-in augmentation policy are preserved.
+
 ## DSH 0.2.1-rc.1
 
 Supports DSH 0.2.1-rc.1. Compatibility is declared through `engines.dsh` and matching peer ranges, including this exact prerelease. The existing 0.2.0-rc.2 support is retained.
