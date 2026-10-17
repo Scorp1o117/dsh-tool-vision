@@ -1,6 +1,6 @@
 {
     "name": "dsh-tool-vision",
-    "version": "0.10.1",
+    "version": "0.10.2",
     "description": "DeepSeek Harness 外置视觉模型插件：inspect_image 把本地图片或 http(s) 图片 URL 发给任意 OpenAI 兼容端点，视觉模型看图的文字回答直接带回对话；附 Web UI 设置栏。",
     "type": "module",
     "main": "index.js",
@@ -22,7 +22,7 @@
             "platform": "web"
         },
         "compatibility": {
-            "dsh": ">=0.2.0-rc.2 <0.3.0",
+            "dsh": ">=0.2.0-rc.2 <0.3.0 || 0.2.1-rc.1",
             "dshReleases": {
                 "0.1.5-rc.2": "incompatible",
                 "0.1.5-rc.3": "incompatible",
@@ -32,7 +32,8 @@
                 "0.1.7-alpha.2": "unknown",
                 "0.1.7-rc.1": "incompatible",
                 "0.1.7-rc.2": "incompatible",
-                "0.2.0-rc.2": "compatible"
+                "0.2.0-rc.2": "compatible",
+                "0.2.1-rc.1": "compatible"
             },
             "node": ">=20.18",
             "profiles": [
@@ -67,7 +68,8 @@
     ],
     "license": "MIT",
     "engines": {
-        "node": ">=20.18"
+        "node": ">=20.18",
+        "dsh": ">=0.2.0-rc.2 <0.3.0 || 0.2.1-rc.1"
     },
     "repository": {
         "type": "git",
@@ -80,8 +82,8 @@
         "@deepseek-ai/schemastery": "^3.18.4"
     },
     "peerDependencies": {
-        "@deepseek-ai/dsh-settings": ">=0.2.0-rc.2 <0.3.0",
-        "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0",
+        "@deepseek-ai/dsh-settings": ">=0.2.0-rc.2 <0.3.0 || 0.2.1-rc.1",
+        "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0 || 0.2.1-rc.1",
         "react": "^18.2.0"
     },
     "optionalDependencies": {
@@ -90,9 +92,9 @@
         "sharp": ">=0.35.3 <1"
     },
     "devDependencies": {
-        "@deepseek-ai/dsh": "0.2.0-rc.2",
-        "@deepseek-ai/dsh-settings": "0.2.0-rc.2",
-        "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+        "@deepseek-ai/dsh": "0.2.1-rc.1",
+        "@deepseek-ai/dsh-settings": "0.2.1-rc.1",
+        "@deepseek-ai/dsh-tools": "0.2.1-rc.1",
         "jsdom": "^30.0.1",
         "react": "^18.3.1",
         "react-dom": "^18.3.1"

@@ -1,5 +1,9 @@
 # dsh-tool-vision
 
+## DSH 0.2.1-rc.1
+
+Supports DSH 0.2.1-rc.1. Compatibility is declared through `engines.dsh` and matching peer ranges, including this exact prerelease. The existing 0.2.0-rc.2 support is retained.
+
 The plugin follows the DSH language setting (Chinese and English in DSH 0.2.0-rc.2), including configuration, status messages and plugin-list metadata. Language-pack locales use the host fallback chain. Switching languages preserves unsaved settings; there is no separate plugin language selector.
 
 ## Configuration page (DSH 0.2.0-rc.2 and later)
