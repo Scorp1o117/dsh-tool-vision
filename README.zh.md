@@ -1,5 +1,9 @@
 # dsh-tool-vision
 
+## DSH 0.2.1-rc.3
+
+适配 DSH 0.2.1-rc.3，明确声明该预发布版本的 engines.dsh 与 peer 范围。宿主新增侧栏/会话「更多」导航菜单、修复新建会话丢失未发送草稿、DeepSeek API Key 路由改跟随官方 /models 模型列表；本插件使用的工具、settings 与 pi-ai 接口保持不变，也未使用任何被移除的宿主 API（`ctx.layout.entryVisibility`、`agentPresetNavigation`）。
+
 ## DSH 0.2.1-rc.2
 
 适配 DSH 0.2.1-rc.2，明确声明该预发布版本的 engines.dsh 与 peer 范围。宿主新增 DeepSeek V4.1 Flash 1017 及 Search/Fetch API，本插件使用的接口保持不变。保留已有推理配置及自动补齐显式开启策略。

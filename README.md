@@ -1,5 +1,9 @@
 # dsh-tool-vision
 
+## DSH 0.2.1-rc.3
+
+Supports DSH 0.2.1-rc.3, including explicit prerelease engines.dsh and peer ranges. This host update adds More navigation menus, keeps unsent drafts on New Session, and follows the official /models listing on the DeepSeek API-key route; the tool, settings and pi-ai interfaces used here remain unchanged, and no removed host API (`ctx.layout.entryVisibility`, `agentPresetNavigation`) was in use.
+
 ## DSH 0.2.1-rc.2
 
 Supports DSH 0.2.1-rc.2, including explicit prerelease engines.dsh and peer ranges. This host update adds DeepSeek V4.1 Flash 1017 and Search/Fetch APIs; the plugin APIs used here remain unchanged. Existing reasoning settings and the opt-in augmentation policy are preserved.

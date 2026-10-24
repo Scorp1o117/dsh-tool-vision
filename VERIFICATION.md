@@ -14,3 +14,11 @@
 - engines.dsh and DSH peer ranges accept 0.2.0-rc.2, 0.2.1-rc.1 and 0.2.1-rc.2, while unverified alpha releases remain excluded.
 - Source comparison found no change to the tool, system-prompt, settings or pi-ai interfaces used by these plugins. Native reasoning settings retain the opt-in augmentation policy.
 - This verification covers Web. Motion UI and the Desktop application are handled separately. No real-model generation was requested.
+
+## 2026-10-24: 0.10.4, DSH 0.2.1-rc.3
+
+- Full npm test passed in fresh dependencies using published DSH 0.2.1-rc.3 packages: 86 Node test-runner cases plus script assertions, with no failed or skipped cases.
+- Official CLI installed the packed plugin in an isolated Web profile built from the shipped web template. Configuration composition, service startup and authenticated HTTP 200 passed.
+- engines.dsh and DSH peer ranges accept 0.2.0-rc.2, 0.2.1-rc.1, 0.2.1-rc.2 and 0.2.1-rc.3, while unverified alpha releases remain excluded.
+- Source comparison of dsh-v0.2.1-rc.2...dsh-v0.2.1-rc.3 found no change to the tool, settings or pi-ai interfaces used by this plugin; the removed ctx.layout.entryVisibility and agentPresetNavigation APIs were not in use.
+- This verification covers Web. The Desktop application was not exercised. No real-model generation was requested.
