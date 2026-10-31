@@ -22,3 +22,10 @@
 - engines.dsh and DSH peer ranges accept 0.2.0-rc.2, 0.2.1-rc.1, 0.2.1-rc.2 and 0.2.1-rc.3, while unverified alpha releases remain excluded.
 - Source comparison of dsh-v0.2.1-rc.2...dsh-v0.2.1-rc.3 found no change to the tool, settings or pi-ai interfaces used by this plugin; the removed ctx.layout.entryVisibility and agentPresetNavigation APIs were not in use.
 - This verification covers Web. The Desktop application was not exercised. No real-model generation was requested.
+
+## 2026-10-31: DSH 0.2.1-rc.4 / rc.5 (local, unreleased)
+
+- `npm test` passed. The directly declared DSH development SDKs resolve to 0.2.1-rc.5.
+- Local package tarballs for all seven plugins installed into separate isolated Web profiles built from the official rc.4 and rc.5 templates. Each host started, served the authenticated Web UI, and showed all seven plugin pages as running without browser page exceptions.
+- DSH rc.3→rc.5 source comparison found a changed reasoning Body slot, which these plugins do not use. DSH compatibility and SDK peer ranges accept rc.4 and rc.5 while retaining prior declared versions; 0.2.2-alpha.2 is not claimed.
+- Native Desktop, external model calls, publication, and deployment were not exercised.
