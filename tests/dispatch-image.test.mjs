@@ -43,7 +43,7 @@ const syncChecks = [
   // The bridge and the dispatch path must read ONE precedence rule, or they can
   // disagree about the same route — which is exactly the bug this closes.
   ['currentModelAcceptsImage delegates to routeDirectDecision',
-    /async function currentModelAcceptsImage\(agent, config, llm\) \{[\s\S]{0,400}?routeDirectDecision\(/.test(server)],
+    /async function currentModelAcceptsImage\(agent, config, llm, modelSelection\) \{[\s\S]{0,400}?routeDirectDecision\(/.test(server)],
 ]
 
 // ── config + fake llm ──

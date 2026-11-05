@@ -975,11 +975,12 @@ async function routeDirectDecision(provider, model, config, llm) {
 /**
  * Whether the session's current model may receive image blocks directly.
  *
- * {@link routeDirectDecision} keyed by the session's route, with the answer
+ * {@link routeDirectDecision} keyed by the step's fixed route when available,
+ * otherwise by the session's route on older hosts, with the answer
  * recorded in {@link lastModelDecision} for the settings panel.
  */
-async function currentModelAcceptsImage(agent, config, llm) {
-  const { provider, model } = currentRoute(agent);
+async function currentModelAcceptsImage(agent, config, llm, modelSelection) {
+  const { provider, model } = modelSelection ?? currentRoute(agent);
   const decision = await routeDirectDecision(provider, model, config, llm);
   Object.assign(lastModelDecision, { provider, model, ...decision });
   return decision.direct;
@@ -1038,7 +1039,7 @@ function attachPreStepBridge(ctx, getConfig, exportDir) {
     const agent = payload?.agent;
     if (!agent?.session) return decision;
     try {
-      const acceptsImage = await currentModelAcceptsImage(agent, getConfig(), ctx.get("llm"));
+      const acceptsImage = await currentModelAcceptsImage(agent, getConfig(), ctx.get("llm"), payload.modelSelection);
       warnAutoPromotion(ctx.logger);
       if (!acceptsImage) {
         let repaired = repairedBySession.get(agent.session.id);

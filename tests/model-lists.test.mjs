@@ -21,6 +21,7 @@ import {
   Config,
   MODEL_CATALOG_ROUTE,
   MULTIMODAL_LIST_MODES,
+  attachPreStepBridge,
   autoPromotionWarned,
   currentModelAcceptsImage,
   installAutoImageAdmission,
@@ -70,7 +71,30 @@ test('the catalog route is registered on the plugin fiber, not the feature fiber
   }
   // The pre-step bridge must hand the llm service to the decision, or
   // auto-detection is silently dead.
-  assert.ok(server.includes('currentModelAcceptsImage(agent, getConfig(), ctx.get("llm"))'))
+  assert.ok(server.includes('currentModelAcceptsImage(agent, getConfig(), ctx.get("llm"), payload.modelSelection)'))
+})
+
+test('pre-step uses the selected model before the new request header is logged', async () => {
+  let preStep
+  const config = legacyCfg({ bridgeTextOnly: true, multimodalModels: ['vision'] })
+  attachPreStepBridge({
+    on(event, listener) {
+      assert.equal(event, 'agent/pre-step')
+      preStep = listener
+    },
+    get: () => undefined,
+    logger: { warn() {} },
+  }, () => config, root)
+  const actor = agent('p', 'vision')
+  actor.session.events = []
+  const next = async () => ({ kind: 'enter', messages: [] })
+
+  await preStep({ agent: actor, modelSelection: { provider: 'p', model: 'text' } }, next)
+  assert.equal(lastModelDecision.model, 'text')
+  assert.equal(lastModelDecision.direct, false)
+  await preStep({ agent: actor }, next)
+  assert.equal(lastModelDecision.model, 'vision')
+  assert.equal(lastModelDecision.direct, true)
 })
 
 test('client.js exposes the new fields', () => {
